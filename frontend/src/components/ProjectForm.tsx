@@ -34,7 +34,7 @@ export function ProjectForm({ project, onChange }: Props) {
           <label htmlFor="clientName">Nome do Cliente *</label>
           <input
             id="clientName"
-            placeholder="COSIPE - SEFAZ"
+            placeholder="Cliente X"
             value={project.clientName}
             onChange={(e) => set('clientName', e.target.value)}
           />
@@ -43,7 +43,7 @@ export function ProjectForm({ project, onChange }: Props) {
           <label htmlFor="sprintName">Nome da Sprint *</label>
           <input
             id="sprintName"
-            placeholder="Sprint 2"
+            placeholder="Sprint X"
             value={project.sprintName}
             onChange={(e) => set('sprintName', e.target.value)}
           />
@@ -61,7 +61,7 @@ export function ProjectForm({ project, onChange }: Props) {
           <label htmlFor="redator">Nome do Redator *</label>
           <input
             id="redator"
-            placeholder="Leonardo Carvalho"
+            placeholder="Seu nome"
             value={project.redator}
             onChange={(e) => set('redator', e.target.value)}
           />
