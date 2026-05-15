@@ -29,7 +29,11 @@ app.get('/api/health', (_req, res) => {
 
 app.use((err, _req, res, _next) => {
   console.error('[error]', err);
-  res.status(500).json({ error: err.message || 'Erro interno do servidor' });
+  res.status(500).json({
+    error: err.message || 'Erro interno do servidor',
+    code: err.code,
+    detail: err.detail,
+  });
 });
 
 await ensureSchema().catch((err) => {
