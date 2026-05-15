@@ -1,6 +1,6 @@
-# Configuração declarativa do Render — opcional (você pode criar o serviço pelo painel também).
-# Os valores marcados com `sync: false` precisam ser configurados manualmente no Dashboard
-# do Render por serem secrets (Render não puxa do arquivo nesses casos).
+# Configuração declarativa do Render — opcional.
+# Os valores marcados com `sync: false` precisam ser configurados manualmente
+# no Dashboard do Render por serem secrets.
 services:
   - type: web
     name: planevidences-backend
@@ -17,15 +17,17 @@ services:
         value: 3001
       - key: DATABASE_URL
         sync: false
-      - key: R2_ACCOUNT_ID
+      - key: STORAGE_ENDPOINT
         sync: false
-      - key: R2_ACCESS_KEY_ID
+      - key: STORAGE_REGION
+        value: us-east-1
+      - key: STORAGE_ACCESS_KEY_ID
         sync: false
-      - key: R2_SECRET_ACCESS_KEY
+      - key: STORAGE_SECRET_ACCESS_KEY
         sync: false
-      - key: R2_BUCKET
+      - key: STORAGE_BUCKET
         value: planevidences
-      - key: R2_PUBLIC_URL
+      - key: STORAGE_PUBLIC_URL
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false

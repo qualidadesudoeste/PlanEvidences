@@ -6,8 +6,8 @@ Sistema web para geração automática de documentação de evidências de teste
 
 - **Frontend:** React + TypeScript + Vite + CSS custom (hospedado no Vercel)
 - **Backend:** Node + Express + Multer + Sharp + LaTeX (hospedado no Render via Docker)
-- **Storage de arquivos:** Cloudflare R2 (10GB grátis)
-- **Banco:** Neon Postgres (3GB grátis)
+- **Storage + Banco:** Supabase (free tier, sem cartão de crédito)
+- Compatível com qualquer S3-compatible (R2, AWS S3, MinIO) trocando as env vars
 
 ## Estrutura
 
@@ -48,24 +48,38 @@ Acesse http://localhost:5173.
 
 Pré-requisito: contas configuradas no Cloudflare R2 e Neon (instruções abaixo).
 
-### 1. Cloudflare R2 (storage)
+### 1. Supabase (banco + storage, sem cartão)
 
-1. https://dash.cloudflare.com → **R2 Object Storage** → ative
-2. **Create bucket** → nome `planevidences`
-3. Entre no bucket → **Settings** → **Public access** → habilite r2.dev subdomain. Anote a URL pública (`https://pub-xxxx.r2.dev`)
-4. Menu R2 → **Manage R2 API Tokens** → **Create API Token**
-   - Permissions: Object Read & Write
-   - Specify bucket: `planevidences`
-   - TTL: Forever
-5. Anote: **Account ID**, **Access Key ID**, **Secret Access Key**
+1. https://supabase.com → **Start your project** (login com GitHub)
+2. **New project**:
+   - Name: `planevidences`
+   - Database password: gere uma forte (anote!)
+   - Region: a mais perto do seu Render (ex: `East US`)
+3. Aguarde ~2min até o projeto provisionar.
 
-### 2. Neon Postgres (banco)
+**Pegue a connection string do Postgres:**
+- **Settings (engrenagem) → Database → Connection string**
+- Aba **URI** → modo **Transaction (pooler)** → copie a string completa
+- Substitua `[YOUR-PASSWORD]` pela senha que você definiu
+- Vai ficar tipo: `postgresql://postgres.xxxx:senha@aws-0-us-east-1.pooler.supabase.com:5432/postgres`
 
-1. https://neon.tech → Sign up com GitHub
-2. **Create Project** (region AWS US East, Postgres 16)
-3. Copie a **Connection String** (preferência pela do "pooler" com `channel_binding=require`)
+**Crie o bucket de storage:**
+- Menu lateral → **Storage** → **New bucket**
+- Name: `planevidences`
+- **Public bucket:** marque (ativa)
+- Create
 
-### 3. Backend no Render
+**Gere as credenciais S3:**
+- **Settings → Storage → S3 Connection**
+- Anote o **Endpoint** (algo como `https://SEU-PROJETO.supabase.co/storage/v1/s3`)
+- Anote a **Region** (geralmente `us-east-1` ou similar)
+- Clique em **New access key** → cria
+- Anote **Access key ID** e **Secret access key** (aparece uma única vez)
+
+**URL pública do bucket** (você monta):
+- Formato: `https://SEU-PROJETO.supabase.co/storage/v1/object/public/planevidences`
+
+### 2. Backend no Render
 
 1. https://render.com → login com GitHub
 2. **New → Web Service** → seleciona o repo
@@ -77,17 +91,18 @@ Pré-requisito: contas configuradas no Cloudflare R2 e Neon (instruções abaixo
 4. **Environment Variables**:
    | Variável | Valor |
    |---|---|
-   | `DATABASE_URL` | (a connection string do Neon) |
-   | `R2_ACCOUNT_ID` | (Account ID do Cloudflare) |
-   | `R2_ACCESS_KEY_ID` | (Access Key do R2) |
-   | `R2_SECRET_ACCESS_KEY` | (Secret Access Key) |
-   | `R2_BUCKET` | `planevidences` |
-   | `R2_PUBLIC_URL` | (URL pub-xxxx.r2.dev) |
+   | `DATABASE_URL` | Connection string Supabase (URI Transaction pooler) |
+   | `STORAGE_ENDPOINT` | `https://SEU-PROJETO.supabase.co/storage/v1/s3` |
+   | `STORAGE_REGION` | `us-east-1` (ou a que Supabase mostrar) |
+   | `STORAGE_ACCESS_KEY_ID` | Access key do Supabase Storage |
+   | `STORAGE_SECRET_ACCESS_KEY` | Secret access key |
+   | `STORAGE_BUCKET` | `planevidences` |
+   | `STORAGE_PUBLIC_URL` | `https://SEU-PROJETO.supabase.co/storage/v1/object/public/planevidences` |
    | `ALLOWED_ORIGINS` | (deixe vazio por enquanto) |
 5. **Create Web Service**. Build leva ~5-8min na primeira vez (TeX Live).
 6. Teste: `https://SEU-BACKEND.onrender.com/api/health` → `{"status":"ok",...}`
 
-### 4. Frontend no Vercel
+### 3. Frontend no Vercel
 
 1. https://vercel.com → importa o repo
 2. Configurações:
@@ -96,7 +111,7 @@ Pré-requisito: contas configuradas no Cloudflare R2 e Neon (instruções abaixo
 3. **Environment Variables**: `VITE_API_URL` = URL do Render
 4. Deploy.
 
-### 5. Fechar o CORS
+### 4. Fechar o CORS
 
 Render → seu serviço → **Environment** → `ALLOWED_ORIGINS` = URL do Vercel. Múltiplos domínios separados por vírgula.
 
@@ -112,12 +127,13 @@ Render → seu serviço → **Environment** → `ALLOWED_ORIGINS` = URL do Verce
 ### Backend
 | Variável | Obrigatório | Descrição |
 |---|---|---|
-| `DATABASE_URL` | sim | Postgres do Neon |
-| `R2_ACCOUNT_ID` | sim | Account ID do Cloudflare |
-| `R2_ACCESS_KEY_ID` | sim | Token R2 |
-| `R2_SECRET_ACCESS_KEY` | sim | Token R2 |
-| `R2_BUCKET` | sim | Nome do bucket |
-| `R2_PUBLIC_URL` | sim | URL pública do bucket (pub-xxxx.r2.dev) |
+| `DATABASE_URL` | sim | Connection string Postgres (Supabase/Neon) |
+| `STORAGE_ENDPOINT` | sim | Endpoint S3-compatible |
+| `STORAGE_REGION` | sim | Region (`us-east-1` para Supabase, `auto` para R2) |
+| `STORAGE_ACCESS_KEY_ID` | sim | Access key |
+| `STORAGE_SECRET_ACCESS_KEY` | sim | Secret access key |
+| `STORAGE_BUCKET` | sim | Nome do bucket |
+| `STORAGE_PUBLIC_URL` | sim | URL pública do bucket |
 | `ALLOWED_ORIGINS` | não | Origens permitidas no CORS (vírgula). Vazio = aberto. |
 | `PORT` | não | Default 3001 (Render seta automaticamente) |
 
@@ -125,9 +141,9 @@ Render → seu serviço → **Environment** → `ALLOWED_ORIGINS` = URL do Verce
 
 ## Como funciona o histórico
 
-- **Imagens** → Cloudflare R2 (`uploads/<sessionId>/<file>`)
-- **Documentos** (.tex e .pdf) → Cloudflare R2 (`documents/<id>/<basename>.{tex,pdf}`)
-- **Metadados** (id, cliente, sprint, versão, redator, URLs) → Postgres tabela `documents`
+- **Imagens** → Supabase Storage (`uploads/<sessionId>/<file>`)
+- **Documentos** (.tex e .pdf) → Supabase Storage (`documents/<id>/<basename>.{tex,pdf}`)
+- **Metadados** (id, cliente, sprint, versão, redator, URLs) → Supabase Postgres, tabela `documents`
 
 A tabela é criada automaticamente no startup do backend (`ensureSchema`).
 

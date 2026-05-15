@@ -5,21 +5,22 @@ import {
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
 
-const ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
-const ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
-const SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
-const BUCKET = process.env.R2_BUCKET;
-const PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+const ENDPOINT = process.env.STORAGE_ENDPOINT;
+const REGION = process.env.STORAGE_REGION || 'us-east-1';
+const ACCESS_KEY = process.env.STORAGE_ACCESS_KEY_ID;
+const SECRET_KEY = process.env.STORAGE_SECRET_ACCESS_KEY;
+const BUCKET = process.env.STORAGE_BUCKET;
+const PUBLIC_URL = (process.env.STORAGE_PUBLIC_URL || '').replace(/\/$/, '');
 
-if (!ACCOUNT_ID || !ACCESS_KEY || !SECRET_KEY || !BUCKET || !PUBLIC_URL) {
+if (!ENDPOINT || !ACCESS_KEY || !SECRET_KEY || !BUCKET || !PUBLIC_URL) {
   console.warn(
-    '[storage] R2 não totalmente configurado. Faltam vars: ' +
+    '[storage] Não totalmente configurado. Faltam vars: ' +
       [
-        !ACCOUNT_ID && 'R2_ACCOUNT_ID',
-        !ACCESS_KEY && 'R2_ACCESS_KEY_ID',
-        !SECRET_KEY && 'R2_SECRET_ACCESS_KEY',
-        !BUCKET && 'R2_BUCKET',
-        !PUBLIC_URL && 'R2_PUBLIC_URL',
+        !ENDPOINT && 'STORAGE_ENDPOINT',
+        !ACCESS_KEY && 'STORAGE_ACCESS_KEY_ID',
+        !SECRET_KEY && 'STORAGE_SECRET_ACCESS_KEY',
+        !BUCKET && 'STORAGE_BUCKET',
+        !PUBLIC_URL && 'STORAGE_PUBLIC_URL',
       ]
         .filter(Boolean)
         .join(', ')
@@ -27,8 +28,9 @@ if (!ACCOUNT_ID || !ACCESS_KEY || !SECRET_KEY || !BUCKET || !PUBLIC_URL) {
 }
 
 export const s3 = new S3Client({
-  region: 'auto',
-  endpoint: `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  region: REGION,
+  endpoint: ENDPOINT,
+  forcePathStyle: true,
   credentials: {
     accessKeyId: ACCESS_KEY,
     secretAccessKey: SECRET_KEY,
