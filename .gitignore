@@ -1,0 +1,29 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# Generated/uploaded files
+uploads/*
+!uploads/.gitkeep
+generated/*
+!generated/.gitkeep
+
+# LaTeX build artifacts
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+
+# Editor
+.vscode/
+.idea/
+.claude/
+
+# Env locais
+.env
+.env.local
+.env.*.local

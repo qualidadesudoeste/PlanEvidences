@@ -1,0 +1,21 @@
+# Configuração declarativa do Render — opcional.
+# Você pode também criar o Web Service manualmente pelo painel.
+services:
+  - type: web
+    name: planevidences-backend
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATA_DIR
+        value: /app/data
+      - key: ALLOWED_ORIGINS
+        # Atualize com o domínio do seu deploy do Vercel:
+        value: https://SEU-DEPLOY-VERCEL.vercel.app
