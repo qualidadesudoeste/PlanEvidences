@@ -291,11 +291,23 @@ function AppInner() {
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <a className="btn btn-secondary btn-sm" href={resolveAssetUrl(lastDoc.tex)} download>
+                    <a
+                      className="btn btn-secondary btn-sm"
+                      href={resolveAssetUrl(lastDoc.tex)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      download
+                    >
                       <FileType size={14} /> .tex
                     </a>
                     {lastDoc.pdf ? (
-                      <a className="btn btn-primary btn-sm" href={resolveAssetUrl(lastDoc.pdf)} download>
+                      <a
+                        className="btn btn-primary btn-sm"
+                        href={resolveAssetUrl(lastDoc.pdf)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download
+                      >
                         <Download size={14} /> PDF
                       </a>
                     ) : (

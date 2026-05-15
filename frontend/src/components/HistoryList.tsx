@@ -105,11 +105,23 @@ export function HistoryList() {
               )}
             </div>
             <div className="history-actions">
-              <a className="btn btn-secondary btn-sm" href={resolveAssetUrl(doc.tex)} download>
+              <a
+                className="btn btn-secondary btn-sm"
+                href={resolveAssetUrl(doc.tex)}
+                target="_blank"
+                rel="noopener noreferrer"
+                download
+              >
                 <FileType size={14} /> .tex
               </a>
               {doc.pdf ? (
-                <a className="btn btn-primary btn-sm" href={resolveAssetUrl(doc.pdf)} download>
+                <a
+                  className="btn btn-primary btn-sm"
+                  href={resolveAssetUrl(doc.pdf)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download
+                >
                   <Download size={14} /> PDF
                 </a>
               ) : (

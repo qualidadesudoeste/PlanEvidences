@@ -37,7 +37,23 @@ app.use(
 app.use(express.json({ limit: '50mb' }));
 
 app.use('/uploads', express.static(UPLOADS_DIR));
-app.use('/generated', express.static(GENERATED_DIR));
+
+app.use(
+  '/generated',
+  express.static(GENERATED_DIR, {
+    setHeaders: (res, filePath) => {
+      const ext = path.extname(filePath).toLowerCase();
+      const base = path.basename(filePath);
+      if (ext === '.pdf') {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${base}"`);
+      } else if (ext === '.tex') {
+        res.setHeader('Content-Type', 'application/x-tex');
+        res.setHeader('Content-Disposition', `attachment; filename="${base}"`);
+      }
+    },
+  })
+);
 
 app.use('/api/upload', uploadRouter);
 app.use('/api/documents', documentsRouter);
