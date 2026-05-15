@@ -1,5 +1,6 @@
-# Configuração declarativa do Render — opcional.
-# Você pode também criar o Web Service manualmente pelo painel.
+# Configuração declarativa do Render — opcional (você pode criar o serviço pelo painel também).
+# Os valores marcados com `sync: false` precisam ser configurados manualmente no Dashboard
+# do Render por serem secrets (Render não puxa do arquivo nesses casos).
 services:
   - type: web
     name: planevidences-backend
@@ -14,8 +15,17 @@ services:
         value: production
       - key: PORT
         value: 3001
-      - key: DATA_DIR
-        value: /app/data
+      - key: DATABASE_URL
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        value: planevidences
+      - key: R2_PUBLIC_URL
+        sync: false
       - key: ALLOWED_ORIGINS
-        # Atualize com o domínio do seu deploy do Vercel:
-        value: https://SEU-DEPLOY-VERCEL.vercel.app
+        sync: false

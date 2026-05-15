@@ -3,8 +3,7 @@ import multer from 'multer';
 import path from 'node:path';
 import { nanoid } from 'nanoid';
 import sharp from 'sharp';
-import { mkdir, writeFile, unlink } from 'node:fs/promises';
-import { UPLOADS_DIR } from '../server.js';
+import { putObject, deleteObject } from '../storage.js';
 
 const router = Router();
 
@@ -19,32 +18,43 @@ const upload = multer({
 
 router.post('/', upload.array('files', 20), async (req, res, next) => {
   try {
-    const sessionId = req.body.sessionId || 'default';
-    const sessionDir = path.join(UPLOADS_DIR, sessionId);
-    await mkdir(sessionDir, { recursive: true });
+    const sessionId = (req.body.sessionId || 'default').replace(/[^a-zA-Z0-9-_]/g, '');
 
     const results = await Promise.all(
       (req.files ?? []).map(async (file) => {
         const id = nanoid(10);
-        const ext = (path.extname(file.originalname) || '.png').toLowerCase();
-        const filename = `${id}${ext}`;
-        const filepath = path.join(sessionDir, filename);
+        const ext = (path.extname(file.originalname) || '.jpg').toLowerCase();
+        const safeExt = ext === '.png' ? '.png' : '.jpg';
+        const filename = `${id}${safeExt}`;
+        const key = `uploads/${sessionId}/${filename}`;
 
-        const compressed = await sharp(file.buffer)
-          .rotate()
-          .resize({ width: 1600, withoutEnlargement: true })
-          .jpeg({ quality: 82, mozjpeg: true })
-          .toBuffer();
+        let processed;
+        let contentType;
+        if (safeExt === '.png') {
+          processed = await sharp(file.buffer)
+            .rotate()
+            .resize({ width: 1600, withoutEnlargement: true })
+            .png({ compressionLevel: 8 })
+            .toBuffer();
+          contentType = 'image/png';
+        } else {
+          processed = await sharp(file.buffer)
+            .rotate()
+            .resize({ width: 1600, withoutEnlargement: true })
+            .jpeg({ quality: 82, mozjpeg: true })
+            .toBuffer();
+          contentType = 'image/jpeg';
+        }
 
-        await writeFile(filepath, compressed);
+        const url = await putObject(key, processed, contentType);
 
         return {
           id,
           originalName: file.originalname,
           filename,
-          path: `${sessionId}/${filename}`,
-          url: `/uploads/${sessionId}/${filename}`,
-          size: compressed.length,
+          key,
+          url,
+          size: processed.length,
         };
       })
     );
@@ -57,10 +67,10 @@ router.post('/', upload.array('files', 20), async (req, res, next) => {
 
 router.delete('/:sessionId/:filename', async (req, res, next) => {
   try {
-    const { sessionId, filename } = req.params;
-    const safe = path.basename(filename);
-    const filepath = path.join(UPLOADS_DIR, sessionId, safe);
-    await unlink(filepath).catch(() => {});
+    const sessionId = req.params.sessionId.replace(/[^a-zA-Z0-9-_]/g, '');
+    const filename = path.basename(req.params.filename);
+    const key = `uploads/${sessionId}/${filename}`;
+    await deleteObject(key).catch(() => {});
     res.json({ ok: true });
   } catch (err) {
     next(err);

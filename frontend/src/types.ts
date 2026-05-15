@@ -2,7 +2,7 @@ export interface UploadedImage {
   id: string;
   originalName: string;
   filename: string;
-  path: string;
+  key: string;
   url: string;
   size: number;
 }
