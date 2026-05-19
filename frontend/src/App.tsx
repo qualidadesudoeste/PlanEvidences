@@ -5,6 +5,7 @@ import { ProjectForm } from '@/components/ProjectForm';
 import { ScenarioCard } from '@/components/ScenarioCard';
 import { HistoryList } from '@/components/HistoryList';
 import { RightPanel } from '@/components/RightPanel';
+import { ImportFromQAModal } from '@/components/ImportFromQAModal';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ThemeProvider } from '@/hooks/useTheme';
@@ -82,6 +83,7 @@ function AppInner() {
   const [progress, setProgress] = useState(0);
   const [lastDoc, setLastDoc] = useState<GeneratedDoc | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [qaImportOpen, setQaImportOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -212,6 +214,23 @@ function AppInner() {
     toast({ variant: 'info', title: 'Projeto limpo' });
   };
 
+  const handleImportFromQA = (
+    scenarios: Scenario[],
+    meta: { projeto: string; sprint: string; tela: string | null }
+  ) => {
+    setProject((p) => ({
+      ...p,
+      projectName: p.projectName || meta.projeto,
+      sprintName: p.sprintName || meta.sprint,
+      scenarios,
+    }));
+    toast({
+      variant: 'success',
+      title: 'Plano importado do QA Assistant',
+      description: `${scenarios.length} cenário(s) carregados.`,
+    });
+  };
+
   return (
     <div className="planevidences-app">
       <Sidebar
@@ -219,10 +238,17 @@ function AppInner() {
         onChangeView={setView}
         onExport={exportJson}
         onImport={importJson}
+        onImportFromQA={() => setQaImportOpen(true)}
         onClear={clearProject}
         scenarioCount={project.scenarios.length}
         redator={project.redator}
         clientName={project.clientName}
+      />
+
+      <ImportFromQAModal
+        open={qaImportOpen}
+        onClose={() => setQaImportOpen(false)}
+        onImport={handleImportFromQA}
       />
 
       <input

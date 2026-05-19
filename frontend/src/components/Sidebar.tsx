@@ -1,4 +1,4 @@
-import { FileText, History, Moon, Sun, Download, Upload, Sparkles, Trash2 } from 'lucide-react';
+import { FileText, History, Moon, Sun, Download, Upload, Sparkles, Trash2, Database } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/utils';
 
@@ -7,6 +7,7 @@ interface Props {
   onChangeView: (v: 'editor' | 'history') => void;
   onExport: () => void;
   onImport: () => void;
+  onImportFromQA: () => void;
   onClear: () => void;
   scenarioCount: number;
   redator: string;
@@ -18,6 +19,7 @@ export function Sidebar({
   onChangeView,
   onExport,
   onImport,
+  onImportFromQA,
   onClear,
   scenarioCount,
   redator,
@@ -81,6 +83,12 @@ export function Sidebar({
               <Upload size={18} />
             </span>
             Importar JSON
+          </button>
+          <button type="button" className="menu-item" onClick={onImportFromQA}>
+            <span className="menu-icon">
+              <Database size={18} />
+            </span>
+            Importar do QA Assistant
           </button>
           <button type="button" className="menu-item danger" onClick={onClear}>
             <span className="menu-icon">
