@@ -17,7 +17,7 @@ export function RightPanel({ scenarios, lastDoc }: Props) {
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       el.style.transition = 'box-shadow 0.4s';
-      el.style.boxShadow = '0 0 0 4px rgba(91, 92, 240, 0.25)';
+      el.style.boxShadow = '0 0 0 4px rgba(30, 158, 34, 0.25)';
       setTimeout(() => (el.style.boxShadow = ''), 1400);
     }
   };

@@ -6,9 +6,16 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  --primary: #5b5cf0;
-  --primary-hover: #494ae0;
-  --primary-light: #f3f2ff;
+  /* Paleta verde QA */
+  --color1: #1e9e22;
+  --color2: #3bb63a;
+  --color3: #59cf53;
+  --color4: #76e76b;
+  --color5: #93ff83;
+
+  --primary: #1e9e22;
+  --primary-hover: #176f1a;
+  --primary-light: #e3f7e1;
 
   --background: #f6f7fb;
   --surface: #ffffff;
@@ -454,7 +461,7 @@ textarea:focus,
 select:focus {
   border-color: var(--primary);
   outline: none;
-  box-shadow: 0 0 0 4px rgba(91, 92, 240, 0.12);
+  box-shadow: 0 0 0 4px rgba(30, 158, 34, 0.12);
 }
 
 /* SCENARIO CARD */
@@ -482,7 +489,7 @@ select:focus {
 }
 
 .dark .scenario-card-header {
-  background: rgba(91, 92, 240, 0.05);
+  background: rgba(30, 158, 34, 0.05);
 }
 
 .scenario-drag {
@@ -652,7 +659,7 @@ select:focus {
 }
 
 .dark .upload-box {
-  background: rgba(91, 92, 240, 0.05);
+  background: rgba(30, 158, 34, 0.05);
 }
 
 /* RIGHT PANEL */
@@ -845,7 +852,7 @@ select:focus {
 }
 
 .dark .result-card {
-  background: linear-gradient(135deg, rgba(91, 92, 240, 0.18), var(--surface));
+  background: linear-gradient(135deg, rgba(30, 158, 34, 0.18), var(--surface));
 }
 
 .result-icon {
@@ -1017,7 +1024,7 @@ select:focus {
   --border: #2a2f3a;
   --text: #f5f7ff;
   --text-secondary: #9ca4b5;
-  --primary-light: rgba(91, 92, 240, 0.12);
+  --primary-light: rgba(30, 158, 34, 0.15);
 }
 
 .dark .image-card {
