@@ -1,13 +1,18 @@
 import { Router } from 'express';
 import path from 'node:path';
 import os from 'node:os';
-import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, rm, copyFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { nanoid } from 'nanoid';
 import { buildLatex } from '../services/latex.js';
 import { compilePdf } from '../services/compile.js';
 import { putObject, deleteObject, keyFromUrl } from '../storage.js';
 import { pool, rowToDoc } from '../db.js';
 import { downloadImagesToDir } from '../services/fetchImages.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const TEMPLATE_DIR = path.resolve(__dirname, '../../../templates');
+const TEMPLATE_ASSETS = ['capa.png', 'cabecalho.png'];
 
 const router = Router();
 
@@ -27,6 +32,16 @@ router.post('/generate', async (req, res, next) => {
     await mkdir(workDir, { recursive: true });
 
     try {
+      await Promise.all(
+        TEMPLATE_ASSETS.map((name) =>
+          copyFile(path.join(TEMPLATE_DIR, name), path.join(workDir, name)).catch(
+            (err) => {
+              console.warn(`[latex] template asset ${name} indisponível: ${err.message}`);
+            }
+          )
+        )
+      );
+
       const localScenarios = await downloadImagesToDir(project.scenarios || [], workDir);
       const tex = buildLatex({ ...project, scenarios: localScenarios }, { uploadsDir: workDir });
 

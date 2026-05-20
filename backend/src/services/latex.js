@@ -15,210 +15,269 @@ const ESCAPES = {
 
 export function escapeLatex(input) {
   if (input == null) return '';
-  const s = String(input);
-  return s.replace(/[\\&%$#_{}~^]/g, (c) => ESCAPES[c]);
-}
-
-function escapeMultiline(input) {
-  return escapeLatex(input)
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join('\\\\\n');
-}
-
-function scenarioCode(index) {
-  return `CT-${String(index + 1).padStart(3, '0')}`;
+  return String(input).replace(/[\\&%$#_{}~^]/g, (c) => ESCAPES[c]);
 }
 
 function todayBR() {
-  const meses = [
-    'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-    'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
-  ];
   const d = new Date();
-  return `${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}`;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+// Quebra o texto BDD em três partes (Dado que / Quando / Então).
+// Linhas iniciadas por "Dado que", "Quando", "Então"/"Entao" mudam o bucket
+// atual. Linhas iniciadas por "E " são anexadas ao bucket atual.
+function parseBdd(text) {
+  const empty = { dado: '', quando: '', entao: '' };
+  if (!text) return empty;
+  const buckets = { dado: [], quando: [], entao: [] };
+  let current = 'dado';
+  const lines = String(text)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const m = line.match(/^(dado que|dado|quando|então|entao|e)\b\s*/i);
+    if (m) {
+      const kw = m[1].toLowerCase();
+      const rest = line.slice(m[0].length).trim();
+      if (kw === 'dado que' || kw === 'dado') {
+        current = 'dado';
+        if (rest) buckets.dado.push(rest);
+      } else if (kw === 'quando') {
+        current = 'quando';
+        if (rest) buckets.quando.push(rest);
+      } else if (kw === 'então' || kw === 'entao') {
+        current = 'entao';
+        if (rest) buckets.entao.push(rest);
+      } else if (kw === 'e') {
+        if (rest) buckets[current].push(rest);
+      } else {
+        buckets[current].push(line);
+      }
+    } else {
+      buckets[current].push(line);
+    }
+  }
+  return {
+    dado: buckets.dado.join(' '),
+    quando: buckets.quando.join(' '),
+    entao: buckets.entao.join(' '),
+  };
 }
 
 export function buildLatex(project, { uploadsDir }) {
   const {
-    projectName = '',
     sprintName = '',
-    version = '1.0',
     redator = '',
     clientName = '',
-    sprintObjective = '',
-    testScope = '',
     scenarios = [],
   } = project;
 
-  const escProject = escapeLatex(projectName);
   const escSprint = escapeLatex(sprintName);
-  const escVersion = escapeLatex(version);
   const escRedator = escapeLatex(redator);
   const escClient = escapeLatex(clientName);
-  const escObjective = escapeLatex(sprintObjective);
-  const escScope = escapeLatex(testScope);
   const escDate = escapeLatex(todayBR());
 
-  const scenariosTex = scenarios
-    .map((sc, idx) => renderScenario(sc, idx, uploadsDir))
-    .join('\n\n');
+  const sectionsTex = scenarios
+    .map((sc, idx) => renderScenario(sc, idx, uploadsDir, scenarios.length))
+    .join('\n');
 
-  return `\\documentclass[12pt, a4paper]{article}
+  return `\\documentclass[12pt,a4paper]{article}
 \\usepackage[utf8]{inputenc}
 \\usepackage[T1]{fontenc}
 \\usepackage[brazil]{babel}
-\\usepackage{geometry}
 \\usepackage{graphicx}
-\\usepackage{float}
-\\usepackage{booktabs}
-\\usepackage{background}
-\\usepackage{mathptmx}
+\\usepackage{geometry}
+\\usepackage{fancyhdr}
 \\usepackage{xcolor}
+\\usepackage{tabularx}
+\\usepackage{array}
 \\usepackage{titlesec}
+\\usepackage{tocloft}
 \\usepackage{hyperref}
-\\usepackage{enumitem}
+\\usepackage{colortbl}
+\\usepackage{float}
+\\usepackage[pages=some]{background}
+\\usepackage{everypage}
 
-\\geometry{a4paper, left=2cm, right=2cm, top=3.5cm, bottom=2.5cm}
-
-\\definecolor{primary}{HTML}{1E3A8A}
-\\definecolor{secondary}{HTML}{475569}
-
-\\hypersetup{
-  colorlinks=true,
-  linkcolor=primary,
-  urlcolor=primary,
-  pdftitle={Evidencias de Teste - ${escSprint}},
-  pdfauthor={${escRedator}}
+% ---- Configuração de margens ----
+\\geometry{
+    a4paper,
+    left=2.5cm,
+    right=2.5cm,
+    top=4cm,
+    bottom=3cm,
+    headheight=2.5cm
 }
 
-\\titleformat{\\section}{\\Large\\bfseries\\color{primary}}{\\thesection}{1em}{}
-\\titleformat{\\subsection}{\\large\\bfseries\\color{secondary}}{\\thesubsection}{1em}{}
+% ---- Cores ----
+\\definecolor{azulSudoeste}{RGB}{46, 88, 148}
+\\definecolor{cinzaClaro}{RGB}{240, 240, 240}
 
-\\backgroundsetup{
-  scale=1,
-  color=black,
-  opacity=1,
-  angle=0,
-  contents={ }
-}
-
-\\newcommand{\\sprintnum}{${escSprint}}
-\\newcommand{\\docversion}{${escVersion}}
-\\newcommand{\\redator}{${escRedator}}
-\\newcommand{\\datacriacao}{${escDate}}
+% ---- Variáveis do documento ----
 \\newcommand{\\clientename}{${escClient}}
-\\newcommand{\\projeto}{${escProject}}
+\\newcommand{\\sprintnum}{${escSprint}}
 
+% ---- Hyperlinks ----
+\\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=azulSudoeste,
+    pdftitle={Evidências de Teste - ${escClient} - ${escSprint}},
+}
+
+% ---- Cabeçalho e rodapé das páginas internas ----
+\\pagestyle{fancy}
+\\fancyhf{}
+\\fancyfoot[C]{\\thepage}
+\\renewcommand{\\headrulewidth}{0pt}
+\\renewcommand{\\footrulewidth}{0pt}
+
+% ---- Formatação de seções ----
+\\titleformat{\\section}
+  {\\normalfont\\large\\bfseries\\color{azulSudoeste}}
+  {}{0em}{}
+\\titleformat{\\subsection}
+  {\\normalfont\\normalsize\\bfseries\\color{azulSudoeste}}
+  {}{0em}{}
+
+% ---- Comando para tabela BDD ----
+\\newcommand{\\tabelaBDD}[3]{%
+    \\vspace{0.4cm}
+    \\noindent
+    \\renewcommand{\\arraystretch}{1.6}
+    \\begin{tabularx}{\\textwidth}{|>{\\columncolor{cinzaClaro}\\bfseries}p{2.5cm}|X|}
+        \\hline
+        DADO QUE & #1 \\\\
+        \\hline
+        QUANDO   & #2 \\\\
+        \\hline
+        ENTÃO    & #3 \\\\
+        \\hline
+    \\end{tabularx}
+    \\vspace{0.4cm}
+}
+
+% ---- Comando para bloco de resultado ----
+\\newcommand{\\resultadoObtido}[1]{%
+    \\noindent\\textbf{RESULTADO OBTIDO:}
+    \\vspace{0.3cm}
+
+    \\noindent
+    \\begin{center}
+        \\includegraphics[width=\\textwidth,keepaspectratio]{#1}
+    \\end{center}
+    \\vspace{0.3cm}
+}
+
+% ---- Linha separadora de seção ----
+\\newcommand{\\linhaSeparadora}{%
+    \\vspace{0.3cm}
+    \\noindent\\textcolor{azulSudoeste}{\\rule{\\textwidth}{0.4pt}}
+    \\vspace{0.3cm}
+}
+
+% =================================================================
 \\begin{document}
 
-% =====================================================
-% CAPA
-% =====================================================
+% ================= CAPA =================
+\\backgroundsetup{
+  scale=1,
+  angle=0,
+  opacity=1,
+  contents={\\includegraphics[width=\\paperwidth,height=\\paperheight]{capa.png}}
+}
 \\begin{titlepage}
-  \\centering
-  \\vspace*{4cm}
-
-  {\\Huge\\bfseries \\projeto{} -- \\clientename \\par}
-  \\vspace{1.2cm}
-  {\\LARGE\\bfseries Plano de Testes \\par}
-  \\vspace{0.5cm}
-  {\\large \\sprintnum \\par}
-  \\vspace{0.35cm}
-  {\\normalsize\\bfseries Versão: \\docversion \\par}
-  \\vspace{0.3cm}
-  {\\normalsize\\bfseries Data: \\datacriacao \\par}
-
-  \\vfill
+    \\thispagestyle{empty}
+    \\BgThispage
+    \\null
+    \\vfill
+    \\begin{center}
+        {\\large \\clientename} \\\\[0.5cm]
+        {\\large \\textbf{Documento de Evidências de Teste}} \\\\[0.3cm]
+        {\\normalsize \\sprintnum}
+    \\end{center}
+    \\vfill
 \\end{titlepage}
 
-% =====================================================
-% SUMÁRIO
-% =====================================================
+% ================= PÁGINAS INTERNAS =================
+\\clearpage
+\\backgroundsetup{
+  scale=1,
+  angle=0,
+  opacity=1,
+  contents={\\includegraphics[width=\\paperwidth,height=\\paperheight]{cabecalho.png}}
+}
+\\BgThispage
+\\AddEverypageHook{\\BgThispage}
+
+% ================= HISTÓRICO DE REVISÃO =================
+\\section*{Histórico de Revisão}
+\\addcontentsline{toc}{section}{Histórico de Revisão}
+
+\\renewcommand{\\arraystretch}{1.5}
+\\begin{tabularx}{\\textwidth}{|l|X|l|}
+    \\hline
+    \\rowcolor{cinzaClaro}
+    \\textbf{Data} & \\textbf{Descrição} & \\textbf{Autor} \\\\
+    \\hline
+    ${escDate} & Criação inicial do documento de evidências de testes para ${escClient} -- ${escSprint}. & ${escRedator} \\\\
+    \\hline
+\\end{tabularx}
+
+\\newpage
+
+% ================= SUMÁRIO =================
 \\tableofcontents
+
 \\newpage
 
-% =====================================================
-% HISTÓRICO DE REVISÃO
-% =====================================================
-\\section{Histórico de Revisão}
-\\begin{table}[H]
-\\centering
-\\begin{tabular}{|c|c|l|l|}
-\\hline
-\\textbf{Versão} & \\textbf{Data} & \\textbf{Responsável} & \\textbf{Descrição} \\\\
-\\hline
-\\docversion & \\datacriacao & \\redator & Criação do documento \\\\
-\\hline
-\\end{tabular}
-\\end{table}
-
-% =====================================================
-% OBJETIVO
-% =====================================================
-\\section{Objetivo}
-${escObjective || 'Documentar as evidências dos testes executados durante a sprint.'}
-
-% =====================================================
-% ESCOPO
-% =====================================================
-\\section{Escopo de Testes}
-${escScope || 'Não informado.'}
-
-% =====================================================
-% CENÁRIOS
-% =====================================================
-\\section{Cenários de Teste}
-${scenariosTex || '\\textit{Nenhum cenário cadastrado.}'}
-
-% =====================================================
-% RESULTADO FINAL
-% =====================================================
-\\newpage
-\\section{Resultado Final}
-A execução dos cenários descritos neste documento permite a validação do escopo definido para a sprint \\sprintnum. As evidências apresentadas demonstram a conformidade dos testes realizados com os requisitos especificados.
-
-\\vspace{1cm}
-\\noindent\\textbf{Total de cenários executados:} ${scenarios.length}
-
-\\vspace{2cm}
-\\begin{flushright}
-\\rule{6cm}{0.4pt}\\\\
-\\redator\\\\
-Analista de Testes
-\\end{flushright}
+${sectionsTex || '\\textit{Nenhum cenário cadastrado.}'}
 
 \\end{document}
 `;
 }
 
-function renderScenario(sc, idx, uploadsDir) {
-  const number = `1.1.${idx + 1}`;
-  const title = escapeLatex(sc.title || 'Cenário sem título');
-  const id = scenarioCode(idx);
-  const bdd = escapeMultiline(sc.bdd || '');
-  const evidencia = escapeLatex(sc.evidence || '');
+function renderScenario(sc, idx, uploadsDir, total) {
+  const title = escapeLatex(sc.title || `Cenário ${idx + 1}`);
+  const parsed = parseBdd(sc.bdd);
+  const dado = escapeLatex(parsed.dado) || '\\textit{Não informado}';
+  const quando = escapeLatex(parsed.quando) || '\\textit{Não informado}';
+  const entao = escapeLatex(parsed.entao) || '\\textit{Não informado}';
+  const status = escapeLatex(sc.status || 'APROVADO');
 
   const images = Array.isArray(sc.images) ? sc.images : [];
-  const imagesTex = images
-    .map((img) => {
-      if (!img?.path) return '';
-      const absolute = path.join(uploadsDir, img.path).replace(/\\/g, '/');
-      return `\\begin{figure}[H]
-\\centering
-\\includegraphics[width=0.85\\linewidth,keepaspectratio]{${absolute}}
-\\end{figure}`;
-    })
-    .filter(Boolean)
-    .join('\n');
+  let resultBlock = '';
+  if (images.length > 0) {
+    const firstAbs = path
+      .join(uploadsDir, images[0].path)
+      .replace(/\\/g, '/');
+    resultBlock = `\\resultadoObtido{${firstAbs}}\n`;
+    for (let i = 1; i < images.length; i++) {
+      const abs = path
+        .join(uploadsDir, images[i].path)
+        .replace(/\\/g, '/');
+      resultBlock +=
+        `\\begin{center}\\includegraphics[width=\\textwidth,keepaspectratio]{${abs}}\\end{center}\n\\vspace{0.3cm}\n`;
+    }
+  }
 
-  return `\\subsection*{Cenário ${number} -- ${title}}
-\\noindent\\textbf{ID:} ${id}\\\\[6pt]
-${bdd || '\\textit{Critério BDD não informado.}'}\\\\[6pt]
-\\textbf{Evidências:} ${evidencia || '\\rule{7cm}{0.4pt}'}
+  const isLast = idx === total - 1;
+  const tail = isLast ? '' : '\n\\newpage\n';
 
-${imagesTex}
+  return `% =================================================================
+\\section{${title}}
 
-\\vspace{0.5cm}`;
+\\tabelaBDD
+  {${dado}}
+  {${quando}}
+  {${entao}}
+
+${resultBlock}
+\\noindent\\textbf{STATUS: ${status}}
+
+\\linhaSeparadora
+${tail}`;
 }

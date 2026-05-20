@@ -1,39 +1,183 @@
-% Template base de referência - o sistema gera dinamicamente em src/services/latex.js
-\documentclass[12pt, a4paper]{article}
+% Template base de referência — o LaTeX final é gerado dinamicamente em
+% backend/src/services/latex.js a partir desta estrutura. Os arquivos
+% capa.png e cabecalho.png deste diretório são copiados para o diretório
+% de compilação a cada geração de documento.
+
+\documentclass[12pt,a4paper]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[brazil]{babel}
-\usepackage{geometry}
 \usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{hyperref}
+\usepackage{colortbl}
 \usepackage{float}
-\usepackage{booktabs}
-\usepackage{background}
-\usepackage{mathptmx}
+\usepackage[pages=some]{background}
+\usepackage{everypage}
 
-\geometry{a4paper, left=2cm, right=2cm, top=3.5cm, bottom=2.5cm}
-
-\backgroundsetup{
-  scale=1,
-  color=black,
-  opacity=1,
-  angle=0,
-  contents={ }
+% ---- Configuração de margens ----
+\geometry{
+    a4paper,
+    left=2.5cm,
+    right=2.5cm,
+    top=4cm,
+    bottom=3cm,
+    headheight=2.5cm
 }
 
-\newcommand{\sprintnum}{Sprint 2}
-\newcommand{\version}{1.0}
-\newcommand{\redator}{Leonardo Carvalho}
-\newcommand{\datacriacao}{\today}
-\newcommand{\clientename}{COSIPE - SEFAZ}
+% ---- Cores ----
+\definecolor{azulSudoeste}{RGB}{46, 88, 148}
+\definecolor{cinzaClaro}{RGB}{240, 240, 240}
 
+% ---- Variáveis do documento ----
+\newcommand{\clientename}{LIVE EDUCAÇÃO}
+\newcommand{\sprintnum}{Sprint 18}
+
+% ---- Hyperlinks ----
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=azulSudoeste,
+    pdftitle={Evidências de Teste - LIVE EDUCAÇÃO - Sprint 18},
+}
+
+% ---- Cabeçalho e rodapé das páginas internas ----
+% O visual do cabeçalho/rodapé vem da imagem de fundo (cabecalho.png)
+% O fancyhdr apenas posiciona o número de página
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% ---- Formatação de seções ----
+\titleformat{\section}
+  {\normalfont\large\bfseries\color{azulSudoeste}}
+  {}{0em}{}
+\titleformat{\subsection}
+  {\normalfont\normalsize\bfseries\color{azulSudoeste}}
+  {}{0em}{}
+
+% ---- Comando para tabela BDD ----
+\newcommand{\tabelaBDD}[3]{%
+    \vspace{0.4cm}
+    \noindent
+    \renewcommand{\arraystretch}{1.6}
+    \begin{tabularx}{\textwidth}{|>{\columncolor{cinzaClaro}\bfseries}p{2.5cm}|X|}
+        \hline
+        DADO QUE & #1 \\
+        \hline
+        QUANDO   & #2 \\
+        \hline
+        ENTÃO    & #3 \\
+        \hline
+    \end{tabularx}
+    \vspace{0.4cm}
+}
+
+% ---- Comando para bloco de resultado ----
+\newcommand{\resultadoObtido}[1]{%
+    \noindent\textbf{RESULTADO OBTIDO:}
+    \vspace{0.3cm}
+
+    \noindent
+    \begin{center}
+        \includegraphics[width=\textwidth,keepaspectratio]{#1}
+    \end{center}
+    \vspace{0.3cm}
+}
+
+% ---- Linha separadora de seção ----
+\newcommand{\linhaSeparadora}{%
+    \vspace{0.3cm}
+    \noindent\textcolor{azulSudoeste}{\rule{\textwidth}{0.4pt}}
+    \vspace{0.3cm}
+}
+
+% =================================================================
 \begin{document}
 
-% CAPA
-% SUMÁRIO
-% HISTÓRICO
-% OBJETIVO
-% ESCOPO
-% CENÁRIOS
-% RESULTADO FINAL
+% ================= CAPA =================
+% A imagem capa.png ocupa toda a página como fundo.
+% O conteúdo textual é centralizado sobre ela.
+\backgroundsetup{
+  scale=1,
+  angle=0,
+  opacity=1,
+  contents={\includegraphics[width=\paperwidth,height=\paperheight]{capa.png}}
+}
+\begin{titlepage}
+    \thispagestyle{empty}
+    \BgThispage
+    \null
+    \vfill
+    \begin{center}
+        {\large \clientename} \\[0.5cm]
+        {\large \textbf{Documento de Evidências de Teste}} \\[0.3cm]
+        {\normalsize \sprintnum}
+    \end{center}
+    \vfill
+\end{titlepage}
+
+% ================= PÁGINAS INTERNAS =================
+% Redefine o background para cabecalho.png a partir daqui.
+% A imagem deve conter o cabeçalho (logo Sudoeste + barra azul no topo)
+% e o rodapé decorativo (barra azul/cinza na base), exatamente como
+% exibido nas páginas internas do documento de referência.
+\clearpage
+\backgroundsetup{
+  scale=1,
+  angle=0,
+  opacity=1,
+  contents={\includegraphics[width=\paperwidth,height=\paperheight]{cabecalho.png}}
+}
+\BgThispage
+\AddEverypageHook{\BgThispage}
+
+% ================= HISTÓRICO DE REVISÃO =================
+\section*{Histórico de Revisão}
+\addcontentsline{toc}{section}{Histórico de Revisão}
+
+\renewcommand{\arraystretch}{1.5}
+\begin{tabularx}{\textwidth}{|l|X|l|}
+    \hline
+    \rowcolor{cinzaClaro}
+    \textbf{Data} & \textbf{Descrição} & \textbf{Autor} \\
+    \hline
+    19/05/2026 & Criação inicial do documento de evidências de testes para LIVE EDUCAÇÃO -- SPRINT 18. & Caio Novais \\
+    \hline
+\end{tabularx}
+
+\newpage
+
+% ================= SUMÁRIO =================
+\tableofcontents
+
+\newpage
+
+% =================================================================
+% Exemplo de seção/cenário gerada dinamicamente pelo backend.
+% Cada cenário no projeto vira uma \section com tabela BDD + resultado.
+% =================================================================
+\section{HU.01 - Diário Online - Planejamento de Aulas (Campo Unidade Intermitente)}
+
+\subsection{TC 01 - Verificar estabilidade do campo Unidade ao navegar entre abas}
+
+\tabelaBDD
+  {o usuário acessa o Diário Online e entra em Planejamento de Aulas}
+  {edita um registro existente, navega para a aba Localizar e retorna para a tela anterior}
+  {o campo Unidade deve permanecer visível e estável, sem desaparecer ao navegar entre abas}
+
+\resultadoObtido{tc01.png}
+
+\noindent\textbf{STATUS: APROVADO}
+
+\linhaSeparadora
 
 \end{document}
