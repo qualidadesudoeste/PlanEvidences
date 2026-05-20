@@ -25,7 +25,7 @@ router.post('/generate', async (req, res, next) => {
 
     const docId = `${Date.now()}-${nanoid(6)}`;
     const safeBase = sanitizeFilename(
-      `${project.clientName || 'cliente'}_${project.sprintName || 'sprint'}_v${project.version || '1.0'}`
+      `Evidências de Teste - ${project.projectName || 'Projeto'} - ${project.clientName || 'Cliente'} - ${project.sprintName || 'Sprint'}`
     );
 
     const workDir = path.join(os.tmpdir(), 'planevidences', docId);
@@ -137,14 +137,16 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
+// Mantém acentos, espaços e hífens; remove apenas o que é inválido
+// em nomes de arquivo (Windows/POSIX) ou caracteres de controle.
 function sanitizeFilename(name) {
   return (
-    name
-      .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
-      .replace(/[^a-zA-Z0-9_\-.]/g, '_')
-      .replace(/_+/g, '_')
-      .slice(0, 80) || 'documento'
+    String(name)
+      .replace(/[\x00-\x1f\x7f]/g, '')
+      .replace(/[\/\\:*?"<>|]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 150) || 'documento'
   );
 }
 

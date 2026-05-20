@@ -39,14 +39,23 @@ export const s3 = new S3Client({
 
 export const BUCKET_NAME = BUCKET;
 
+function encodeKey(key) {
+  return String(key).split('/').map(encodeURIComponent).join('/');
+}
+
 export function publicUrl(key) {
-  return `${PUBLIC_URL}/${key}`;
+  return `${PUBLIC_URL}/${encodeKey(key)}`;
 }
 
 export function keyFromUrl(url) {
   if (!url || !PUBLIC_URL) return null;
-  if (url.startsWith(`${PUBLIC_URL}/`)) return url.slice(PUBLIC_URL.length + 1);
-  return null;
+  if (!url.startsWith(`${PUBLIC_URL}/`)) return null;
+  const encoded = url.slice(PUBLIC_URL.length + 1);
+  try {
+    return encoded.split('/').map(decodeURIComponent).join('/');
+  } catch {
+    return encoded;
+  }
 }
 
 export async function putObject(key, body, contentType) {
