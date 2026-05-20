@@ -11,7 +11,7 @@ import { pool, rowToDoc } from '../db.js';
 import { downloadImagesToDir } from '../services/fetchImages.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TEMPLATE_DIR = path.resolve(__dirname, '../../../templates');
+const TEMPLATE_DIR = path.resolve(__dirname, '../../templates');
 const TEMPLATE_ASSETS = ['capa.png', 'cabecalho.png'];
 
 const router = Router();
