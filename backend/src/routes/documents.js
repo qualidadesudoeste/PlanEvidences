@@ -137,13 +137,19 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
-// Mantém acentos, espaços e hífens; remove apenas o que é inválido
-// em nomes de arquivo (Windows/POSIX) ou caracteres de controle.
+// Gera um nome ASCII-safe pra usar como chave S3 e nome de arquivo.
+// Strip de acentos (NFD + remoção de diacríticos) é obrigatório porque vários
+// backends S3-like (Supabase Storage, MinIO com validação strict) rejeitam
+// keys com caracteres não-ASCII. Caracteres inválidos em nomes Windows/POSIX
+// e qualquer não-ASCII restante viram "_".
 function sanitizeFilename(name) {
   return (
     String(name)
+      .normalize('NFD')
+      .replace(/\p{Mn}+/gu, '')
       .replace(/[\x00-\x1f\x7f]/g, '')
       .replace(/[\/\\:*?"<>|]/g, '')
+      .replace(/[^\x20-\x7e]/g, '_')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 150) || 'documento'
