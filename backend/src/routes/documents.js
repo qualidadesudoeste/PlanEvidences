@@ -24,8 +24,9 @@ router.post('/generate', async (req, res, next) => {
     }
 
     const docId = `${Date.now()}-${nanoid(6)}`;
+    const sprintLabel = project.sprintName ? `Sprint ${project.sprintName}` : 'Sprint';
     const safeBase = sanitizeFilename(
-      `Evidências de Teste - ${project.projectName || 'Projeto'} - ${project.clientName || 'Cliente'} - ${project.sprintName || 'Sprint'}`
+      `Evidências de Teste - ${project.projectName || 'Projeto'} - ${project.clientName || 'Cliente'} - ${sprintLabel}`
     );
 
     const workDir = path.join(os.tmpdir(), 'planevidences', docId);

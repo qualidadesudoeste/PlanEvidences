@@ -40,12 +40,19 @@ export function ProjectForm({ project, onChange }: Props) {
           />
         </div>
         <div className="form-group">
-          <label htmlFor="sprintName">Nome da Sprint *</label>
+          <label htmlFor="sprintName">Número da Sprint *</label>
           <input
             id="sprintName"
-            placeholder="Sprint X"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder="Ex: 7"
             value={project.sprintName}
-            onChange={(e) => set('sprintName', e.target.value)}
+            onChange={(e) => {
+              // Aceita só dígitos — o LaTeX prefixa "Sprint " automaticamente.
+              const digits = e.target.value.replace(/\D/g, '');
+              set('sprintName', digits);
+            }}
           />
         </div>
         <div className="form-group">

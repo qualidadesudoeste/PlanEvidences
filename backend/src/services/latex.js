@@ -69,16 +69,20 @@ function parseBdd(text) {
 
 export function buildLatex(project, { uploadsDir }) {
   const {
+    projectName = '',
     sprintName = '',
     redator = '',
     clientName = '',
     scenarios = [],
   } = project;
 
+  const escProject = escapeLatex(projectName);
   const escSprint = escapeLatex(sprintName);
   const escRedator = escapeLatex(redator);
   const escClient = escapeLatex(clientName);
   const escDate = escapeLatex(todayBR());
+  // "PROJETO - CLIENTE" na capa (ex: "SGOS - SMED"); cai pra um só caso o outro venha vazio.
+  const tituloCapa = [projectName, clientName].filter(Boolean).map(escapeLatex).join(' - ') || 'Projeto';
 
   const sectionsTex = scenarios
     .map((sc, idx) => renderScenario(sc, idx, uploadsDir, scenarios.length))
@@ -122,14 +126,17 @@ export function buildLatex(project, { uploadsDir }) {
 
 % ---- Variáveis do documento ----
 \\newcommand{\\clientename}{${escClient}}
+\\newcommand{\\projectname}{${escProject}}
+\\newcommand{\\titulocapa}{${tituloCapa}}
 \\newcommand{\\sprintnum}{${escSprint}}
+\\newcommand{\\sprintlabel}{${escSprint ? `Sprint ${escSprint}` : ''}}
 
 % ---- Hyperlinks ----
 \\hypersetup{
     colorlinks=true,
     linkcolor=black,
     urlcolor=azulSudoeste,
-    pdftitle={Evidências de Teste - ${escClient} - ${escSprint}},
+    pdftitle={Evidências de Teste - ${tituloCapa}${escSprint ? ` - Sprint ${escSprint}` : ''}},
 }
 
 % ---- Cabeçalho e rodapé das páginas internas ----
@@ -199,9 +206,9 @@ export function buildLatex(project, { uploadsDir }) {
     \\null
     \\vfill
     \\begin{center}
-        {\\large \\clientename} \\\\[0.5cm]
+        {\\large \\titulocapa} \\\\[0.5cm]
         {\\large \\textbf{Documento de Evidências de Teste}} \\\\[0.3cm]
-        {\\normalsize \\sprintnum}
+        {\\normalsize \\sprintlabel}
     \\end{center}
     \\vfill
 \\end{titlepage}
@@ -227,7 +234,7 @@ export function buildLatex(project, { uploadsDir }) {
     \\rowcolor{cinzaClaro}
     \\textbf{Data} & \\textbf{Descrição} & \\textbf{Autor} \\\\
     \\hline
-    ${escDate} & Criação inicial do documento de evidências de testes para ${escClient} -- ${escSprint}. & ${escRedator} \\\\
+    ${escDate} & Criação inicial do documento de evidências de testes para ${tituloCapa}${escSprint ? ` -- Sprint ${escSprint}` : ''}. & ${escRedator} \\\\
     \\hline
 \\end{tabularx}
 
