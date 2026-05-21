@@ -15,6 +15,10 @@
 \usepackage{array}
 \usepackage{titlesec}
 \usepackage{tocloft}
+% Aumenta o espaço reservado pro número da seção no sumário — sem isso,
+% itens com 3+ dígitos (>99) colam no título (ex: "100Validação").
+\setlength{\cftsecnumwidth}{3.5em}
+\setlength{\cftsubsecnumwidth}{4em}
 \usepackage{hyperref}
 \usepackage{colortbl}
 \usepackage{float}
