@@ -172,13 +172,15 @@ export function buildLatex(project, { uploadsDir }) {
 }
 
 % ---- Comando para bloco de resultado ----
+% Altura máxima: 65% do textheight. Screenshots de mobile em portrait não
+% invadem mais o rodapé, e imagens horizontais ainda usam toda a largura.
 \\newcommand{\\resultadoObtido}[1]{%
     \\noindent\\textbf{RESULTADO OBTIDO:}
     \\vspace{0.3cm}
 
     \\noindent
     \\begin{center}
-        \\includegraphics[width=\\textwidth,keepaspectratio]{#1}
+        \\includegraphics[width=\\textwidth,height=0.65\\textheight,keepaspectratio]{#1}
     \\end{center}
     \\vspace{0.3cm}
 }
@@ -271,7 +273,7 @@ function renderScenario(sc, idx, uploadsDir, total) {
         .join(uploadsDir, images[i].path)
         .replace(/\\/g, '/');
       resultBlock +=
-        `\\begin{center}\\includegraphics[width=\\textwidth,keepaspectratio]{${abs}}\\end{center}\n\\vspace{0.3cm}\n`;
+        `\\begin{center}\\includegraphics[width=\\textwidth,height=0.65\\textheight,keepaspectratio]{${abs}}\\end{center}\n\\vspace{0.3cm}\n`;
     }
   }
 
