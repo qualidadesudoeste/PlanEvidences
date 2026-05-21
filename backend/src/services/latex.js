@@ -185,13 +185,6 @@ export function buildLatex(project, { uploadsDir }) {
     \\vspace{0.3cm}
 }
 
-% ---- Linha separadora de seção ----
-\\newcommand{\\linhaSeparadora}{%
-    \\vspace{0.3cm}
-    \\noindent\\textcolor{azulSudoeste}{\\rule{\\textwidth}{0.4pt}}
-    \\vspace{0.3cm}
-}
-
 % =================================================================
 \\begin{document}
 
@@ -290,7 +283,5 @@ function renderScenario(sc, idx, uploadsDir, total) {
 
 ${resultBlock}
 \\noindent\\textbf{STATUS: ${status}}
-
-\\linhaSeparadora
 ${tail}`;
 }
