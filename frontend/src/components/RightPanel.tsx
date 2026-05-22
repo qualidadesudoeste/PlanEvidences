@@ -1,6 +1,6 @@
 import { ListChecks, Image as ImageIcon, FileText, Clock } from 'lucide-react';
 import { type Scenario, scenarioCode } from '@/types';
-import { formatDate } from '@/lib/utils';
+import { agruparCenariosPorCard, formatDate, tituloCardParaExibicao } from '@/lib/utils';
 import type { GeneratedDoc } from '@/types';
 
 interface Props {
@@ -30,19 +30,34 @@ export function RightPanel({ scenarios, lastDoc }: Props) {
           <p className="scenario-empty">Nenhum cenário cadastrado.</p>
         ) : (
           <div className="scenario-list">
-            {scenarios.map((s, i) => (
-              <button
-                key={s.id}
-                type="button"
-                className="scenario-item"
-                onClick={() => scrollToScenario(s.id)}
-              >
-                <div className="scenario-id">{scenarioCode(i)}</div>
-                <div className="scenario-name">
-                  {s.title || <em style={{ color: 'var(--text-secondary)' }}>Sem título</em>}
+            {(() => {
+              const indiceGlobal = new Map(scenarios.map((s, i) => [s.id, i]));
+              return agruparCenariosPorCard(scenarios).map((g) => (
+                <div key={g.codigo || 'sem-card'} className="scenario-nav-group">
+                  {g.codigo && (
+                    <div className="scenario-nav-group-title">
+                      {tituloCardParaExibicao(g.codigo, g.resumo)}
+                    </div>
+                  )}
+                  {g.scenarios.map((s) => {
+                    const idx = indiceGlobal.get(s.id) ?? 0;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className="scenario-item"
+                        onClick={() => scrollToScenario(s.id)}
+                      >
+                        <div className="scenario-id">{scenarioCode(idx)}</div>
+                        <div className="scenario-name">
+                          {s.title || <em style={{ color: 'var(--text-secondary)' }}>Sem título</em>}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              </button>
-            ))}
+              ));
+            })()}
           </div>
         )}
       </div>

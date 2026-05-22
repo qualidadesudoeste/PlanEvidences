@@ -32,6 +32,10 @@ export interface QATestPlan {
       bdd: string;
       evidence: string;
       images: unknown[];
+      cardCodigo?: string | null;
+      cardResumo?: string | null;
+      cardCaminho?: string | null;
+      caseId?: string | null;
     }>;
   };
 }

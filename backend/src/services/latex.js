@@ -67,6 +67,37 @@ function parseBdd(text) {
   };
 }
 
+// Decide o título exibido do card no PDF:
+//   - HU.* → mostra só o resumo (já carrega o identificador no nome).
+//   - Numérico (cards SIG) → "Card #CODIGO — Resumo".
+function tituloCardParaLatex(codigo, resumo) {
+  if (!codigo) return resumo || '(sem identificação)';
+  if (/^HU/i.test(codigo)) return resumo || codigo;
+  return resumo ? `Card #${codigo} — ${resumo}` : `Card #${codigo}`;
+}
+
+// Agrupa scenarios pelo cardCodigo preservando a ordem original. Cenários sem
+// cardCodigo caem num grupo "sem card" — usado pra projetos legados (gerados antes
+// da feature de agrupamento) sem quebrar a renderização.
+function agruparPorCard(scenarios) {
+  const grupos = [];
+  const idx = new Map();
+  scenarios.forEach((sc) => {
+    const cod = sc.cardCodigo || '__SEM_CARD__';
+    if (!idx.has(cod)) {
+      idx.set(cod, grupos.length);
+      grupos.push({
+        codigo: sc.cardCodigo || null,
+        resumo: sc.cardResumo || null,
+        caminho: sc.cardCaminho || null,
+        scenarios: [],
+      });
+    }
+    grupos[idx.get(cod)].scenarios.push(sc);
+  });
+  return grupos;
+}
+
 export function buildLatex(project, { uploadsDir }) {
   const {
     projectName = '',
@@ -84,9 +115,39 @@ export function buildLatex(project, { uploadsDir }) {
   // "PROJETO - CLIENTE" na capa (ex: "SGOS - SMED"); cai pra um só caso o outro venha vazio.
   const tituloCapa = [projectName, clientName].filter(Boolean).map(escapeLatex).join(' - ') || 'Projeto';
 
-  const sectionsTex = scenarios
-    .map((sc, idx) => renderScenario(sc, idx, uploadsDir, scenarios.length))
-    .join('\n');
+  // Quando há cards (cardCodigo presente em pelo menos 1 cenário), agrupa as seções
+  // por card: \section{Card #...} com \subsection{CT-001 - título} para cada cenário.
+  // Quando não há (projetos antigos), mantém o formato flat \section por cenário.
+  const temCards = scenarios.some((s) => s.cardCodigo);
+  let sectionsTex;
+  if (temCards) {
+    let globalIdx = 0;
+    sectionsTex = agruparPorCard(scenarios)
+      .map((grupo, gi, arr) => {
+        const tituloGrupo = escapeLatex(tituloCardParaLatex(grupo.codigo, grupo.resumo));
+        const caminhoTex = grupo.caminho
+          ? `\\noindent\\textit{Caminho: ${escapeLatex(grupo.caminho)}}\\par\\vspace{0.3cm}\n`
+          : '';
+        const cenariosTex = grupo.scenarios
+          .map((sc) => {
+            const out = renderScenario(sc, globalIdx, uploadsDir, scenarios.length, { useSubsection: true });
+            globalIdx++;
+            return out;
+          })
+          .join('\n');
+        const isLastGroup = gi === arr.length - 1;
+        // Quebra de página entre grupos pra cada card começar numa página nova.
+        const tail = isLastGroup ? '' : '\n\\newpage\n';
+        return `% ================== CARD ==================
+\\section{${tituloGrupo}}
+${caminhoTex}${cenariosTex}${tail}`;
+      })
+      .join('\n');
+  } else {
+    sectionsTex = scenarios
+      .map((sc, idx) => renderScenario(sc, idx, uploadsDir, scenarios.length))
+      .join('\n');
+  }
 
   return `\\documentclass[12pt,a4paper]{article}
 \\usepackage[utf8]{inputenc}
@@ -246,8 +307,13 @@ ${sectionsTex || '\\textit{Nenhum cenário cadastrado.}'}
 `;
 }
 
-function renderScenario(sc, idx, uploadsDir, total) {
-  const title = escapeLatex(sc.title || `Cenário ${idx + 1}`);
+function renderScenario(sc, idx, uploadsDir, total, opts = {}) {
+  const useSubsection = !!opts.useSubsection;
+  // Quando subsection, prefixa com o ID CT-001 pra alinhar com a UI e o sumário.
+  const ctId = String(idx + 1).padStart(3, '0');
+  const rawTitle = sc.title || `Cenário ${idx + 1}`;
+  const tituloComId = useSubsection ? `CT-${ctId} — ${rawTitle}` : rawTitle;
+  const title = escapeLatex(tituloComId);
   const parsed = parseBdd(sc.bdd);
   const dado = escapeLatex(parsed.dado) || '\\textit{Não informado}';
   const quando = escapeLatex(parsed.quando) || '\\textit{Não informado}';
@@ -271,10 +337,14 @@ function renderScenario(sc, idx, uploadsDir, total) {
   }
 
   const isLast = idx === total - 1;
-  const tail = isLast ? '' : '\n\\newpage\n';
+  // Quando agrupando por card, deixamos a quebra de página entre CARDS (no buildLatex),
+  // não entre cenários do mesmo card — caso contrário cada CT vai pra página nova
+  // e o documento explode em tamanho.
+  const tail = isLast || useSubsection ? '' : '\n\\newpage\n';
+  const heading = useSubsection ? '\\subsection' : '\\section';
 
   return `% =================================================================
-\\section{${title}}
+${heading}{${title}}
 
 \\tabelaBDD
   {${dado}}

@@ -60,6 +60,10 @@ export function ImportFromQAModal({ open, onClose, onImport }: Props) {
         bdd: s.bdd,
         evidence: s.evidence || '',
         images: Array.isArray(s.images) ? (s.images as Scenario['images']) : [],
+        cardCodigo: s.cardCodigo ?? null,
+        cardResumo: s.cardResumo ?? null,
+        cardCaminho: s.cardCaminho ?? null,
+        caseId: s.caseId ?? null,
       }));
       onImport(mapped, { projeto: full.projeto, sprint: full.sprint, tela: full.tela });
       onClose();

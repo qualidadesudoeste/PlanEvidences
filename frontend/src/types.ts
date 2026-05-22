@@ -13,6 +13,12 @@ export interface Scenario {
   bdd: string;
   evidence: string;
   images: UploadedImage[];
+  // Metadados do card/HU de origem (vindos do QA Assistant). Quando presentes,
+  // os cenários são agrupados por card na UI e no PDF gerado.
+  cardCodigo?: string | null;
+  cardResumo?: string | null;
+  cardCaminho?: string | null;
+  caseId?: string | null;
 }
 
 export interface Project {

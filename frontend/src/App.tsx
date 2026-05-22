@@ -11,6 +11,7 @@ import { Progress } from '@/components/ui/progress';
 import { ThemeProvider } from '@/hooks/useTheme';
 import { ToastsProvider, useToast } from '@/hooks/useToast';
 import { generateDocument, resolveAssetUrl } from '@/lib/api';
+import { agruparCenariosPorCard, tituloCardParaExibicao } from '@/lib/utils';
 import type { GeneratedDoc, Project, Scenario } from '@/types';
 
 const STORAGE_KEY = 'qa-evidences-project';
@@ -38,7 +39,13 @@ function newScenario(): Scenario {
 }
 
 function migrateScenario(s: any): Scenario {
-  if (typeof s?.bdd === 'string') return { ...newScenario(), ...s };
+  const cardMeta = {
+    cardCodigo: s?.cardCodigo ?? null,
+    cardResumo: s?.cardResumo ?? null,
+    cardCaminho: s?.cardCaminho ?? null,
+    caseId: s?.caseId ?? null,
+  };
+  if (typeof s?.bdd === 'string') return { ...newScenario(), ...s, ...cardMeta };
   const parts: string[] = [];
   if (s?.given) parts.push(`Dado que ${s.given}`);
   if (s?.when) parts.push(`Quando ${s.when}`);
@@ -50,6 +57,7 @@ function migrateScenario(s: any): Scenario {
     bdd: parts.join('\n'),
     evidence: s?.evidence || '',
     images: Array.isArray(s?.images) ? s.images : [],
+    ...cardMeta,
   };
 }
 
@@ -382,24 +390,50 @@ function AppInner() {
                     </div>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {project.scenarios.map((s, idx) => (
-                      <ScenarioCard
-                        key={s.id}
-                        scenario={s}
-                        index={idx}
-                        sessionId={sessionId}
-                        onChange={(u) => updateScenario(s.id, u)}
-                        onRemove={() => removeScenario(s.id)}
-                        onDragStart={() => setDraggingId(s.id)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={() => {
-                          if (draggingId) reorderScenario(draggingId, s.id);
-                          setDraggingId(null);
-                        }}
-                        isDragging={draggingId === s.id}
-                      />
-                    ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+                    {(() => {
+                      const indiceGlobal = new Map(project.scenarios.map((s, i) => [s.id, i]));
+                      return agruparCenariosPorCard(project.scenarios).map((g) => {
+                        const titulo = tituloCardParaExibicao(g.codigo, g.resumo);
+                        const temCard = !!g.codigo;
+                        return (
+                          <div key={g.codigo || 'sem-card'} className="card-group">
+                            {temCard && (
+                              <div className="card-group-header">
+                                <h3>{titulo}</h3>
+                                {g.caminho && (
+                                  <p className="card-group-path">
+                                    <strong>Caminho:</strong> {g.caminho}
+                                  </p>
+                                )}
+                                <span className="card-group-count">
+                                  {g.scenarios.length} cenário{g.scenarios.length !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                            )}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                              {g.scenarios.map((s) => (
+                                <ScenarioCard
+                                  key={s.id}
+                                  scenario={s}
+                                  index={indiceGlobal.get(s.id) ?? 0}
+                                  sessionId={sessionId}
+                                  onChange={(u) => updateScenario(s.id, u)}
+                                  onRemove={() => removeScenario(s.id)}
+                                  onDragStart={() => setDraggingId(s.id)}
+                                  onDragOver={(e) => e.preventDefault()}
+                                  onDrop={() => {
+                                    if (draggingId) reorderScenario(draggingId, s.id);
+                                    setDraggingId(null);
+                                  }}
+                                  isDragging={draggingId === s.id}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 )}
               </section>
