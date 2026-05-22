@@ -125,9 +125,6 @@ export function buildLatex(project, { uploadsDir }) {
     sectionsTex = agruparPorCard(scenarios)
       .map((grupo, gi, arr) => {
         const tituloGrupo = escapeLatex(tituloCardParaLatex(grupo.codigo, grupo.resumo));
-        const caminhoTex = grupo.caminho
-          ? `\\noindent\\textit{Caminho: ${escapeLatex(grupo.caminho)}}\\par\\vspace{0.3cm}\n`
-          : '';
         const cenariosTex = grupo.scenarios
           .map((sc) => {
             const out = renderScenario(sc, globalIdx, uploadsDir, scenarios.length, { useSubsection: true });
@@ -140,7 +137,7 @@ export function buildLatex(project, { uploadsDir }) {
         const tail = isLastGroup ? '' : '\n\\newpage\n';
         return `% ================== CARD ==================
 \\section{${tituloGrupo}}
-${caminhoTex}${cenariosTex}${tail}`;
+${cenariosTex}${tail}`;
       })
       .join('\n');
   } else {
