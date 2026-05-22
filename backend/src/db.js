@@ -34,6 +34,10 @@ export async function ensureSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS documents_created_idx ON documents (created_at DESC);
+    -- project_json guarda o payload completo (scenarios, evidências, imagens) pra
+    -- permitir reabrir um documento do histórico no editor. ALTER idempotente:
+    -- documentos antigos ficam com NULL e são tratados como "sem projeto salvo".
+    ALTER TABLE documents ADD COLUMN IF NOT EXISTS project_json JSONB;
   `);
   console.log('[db] schema ready');
 }
@@ -51,5 +55,6 @@ export function rowToDoc(r) {
     pdf: r.pdf_url,
     pdfError: r.pdf_error,
     createdAt: r.created_at.toISOString(),
+    hasProject: r.project_json != null,
   };
 }

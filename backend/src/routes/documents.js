@@ -68,8 +68,8 @@ router.post('/generate', async (req, res, next) => {
       const createdAt = new Date();
       await pool.query(
         `INSERT INTO documents
-          (id, project_name, client_name, sprint_name, version, redator, base_name, tex_url, tex_key, pdf_url, pdf_key, pdf_error, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          (id, project_name, client_name, sprint_name, version, redator, base_name, tex_url, tex_key, pdf_url, pdf_key, pdf_error, created_at, project_json)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [
           docId,
           project.projectName,
@@ -84,6 +84,7 @@ router.post('/generate', async (req, res, next) => {
           pdfKey,
           pdfResult.ok ? null : pdfResult.error || 'pdflatex não encontrado',
           createdAt,
+          JSON.stringify(project),
         ]
       );
 
@@ -99,6 +100,7 @@ router.post('/generate', async (req, res, next) => {
         pdf: pdfUrl,
         pdfError: pdfResult.ok ? null : pdfResult.error || 'pdflatex não encontrado',
         baseName: safeBase,
+        hasProject: true,
       });
     } finally {
       rm(workDir, { recursive: true, force: true }).catch(() => {});
@@ -114,6 +116,25 @@ router.get('/', async (_req, res, next) => {
       'SELECT * FROM documents ORDER BY created_at DESC LIMIT 200'
     );
     res.json({ items: result.rows.map(rowToDoc) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/project', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      'SELECT project_json FROM documents WHERE id = $1',
+      [req.params.id]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Documento não encontrado.' });
+    if (!row.project_json) {
+      return res
+        .status(410)
+        .json({ error: 'Este documento foi gerado antes da feature de reabertura. O estado do projeto não está salvo.' });
+    }
+    res.json({ project: row.project_json });
   } catch (err) {
     next(err);
   }

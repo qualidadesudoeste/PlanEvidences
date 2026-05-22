@@ -73,3 +73,9 @@ export async function listDocuments(): Promise<{ items: GeneratedDoc[] }> {
 export async function deleteDocument(id: string): Promise<void> {
   await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
+
+export async function getDocumentProject(id: string): Promise<Project> {
+  const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}/project`);
+  const data = await handle<{ project: Project }>(res);
+  return data.project;
+}

@@ -44,6 +44,10 @@ export interface GeneratedDoc {
   pdf: string | null;
   pdfError: string | null;
   baseName: string;
+  // Indica que o documento tem project_json salvo (gerado após a feature de
+  // reabertura). Documentos antigos vêm com hasProject=false e o botão "Abrir
+  // no editor" fica desabilitado.
+  hasProject?: boolean;
 }
 
 export function scenarioCode(index: number): string {

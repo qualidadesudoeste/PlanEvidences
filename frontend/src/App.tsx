@@ -239,6 +239,16 @@ function AppInner() {
     });
   };
 
+  // Chamado pelo HistoryList quando o usuário clica "Abrir no editor". Carrega
+  // o project_json salvo e troca para a aba Editor. A geração subsequente cria
+  // um novo documento (novo ID), preservando o original no histórico.
+  const handleOpenFromHistory = (loaded: Project) => {
+    const scenarios = Array.isArray(loaded.scenarios) ? loaded.scenarios.map(migrateScenario) : [];
+    setProject({ ...emptyProject, ...loaded, scenarios });
+    setLastDoc(null);
+    setView('editor');
+  };
+
   return (
     <div className="planevidences-app">
       <Sidebar
@@ -443,7 +453,7 @@ function AppInner() {
           </>
         ) : (
           <div className="content-left">
-            <HistoryList />
+            <HistoryList onOpenProject={handleOpenFromHistory} />
           </div>
         )}
       </main>

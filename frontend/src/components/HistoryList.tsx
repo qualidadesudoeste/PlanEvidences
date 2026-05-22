@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Download, FileText, FileType, History, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
+import { Download, FileText, FileType, History, RefreshCw, Trash2, AlertCircle, Pencil, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { listDocuments, deleteDocument, resolveAssetUrl } from '@/lib/api';
+import { listDocuments, deleteDocument, resolveAssetUrl, getDocumentProject } from '@/lib/api';
 import { useToast } from '@/hooks/useToast';
 import { formatDate } from '@/lib/utils';
-import type { GeneratedDoc } from '@/types';
+import type { GeneratedDoc, Project } from '@/types';
 
-export function HistoryList() {
+interface HistoryListProps {
+  onOpenProject?: (project: Project) => void;
+}
+
+export function HistoryList({ onOpenProject }: HistoryListProps = {}) {
   const [items, setItems] = useState<GeneratedDoc[]>([]);
   const [loading, setLoading] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const load = async () => {
@@ -36,6 +41,28 @@ export function HistoryList() {
     await deleteDocument(id);
     setItems((prev) => prev.filter((d) => d.id !== id));
     toast({ variant: 'success', title: 'Documento removido' });
+  };
+
+  const handleOpen = async (doc: GeneratedDoc) => {
+    if (!onOpenProject) return;
+    setOpeningId(doc.id);
+    try {
+      const project = await getDocumentProject(doc.id);
+      onOpenProject(project);
+      toast({
+        variant: 'success',
+        title: 'Projeto carregado',
+        description: 'Edite os cenários e clique em "Gerar Documento" para criar uma nova versão.',
+      });
+    } catch (err) {
+      toast({
+        variant: 'error',
+        title: 'Não foi possível abrir',
+        description: err instanceof Error ? err.message : 'Falha desconhecida',
+      });
+    } finally {
+      setOpeningId(null);
+    }
   };
 
   return (
@@ -105,6 +132,27 @@ export function HistoryList() {
               )}
             </div>
             <div className="history-actions">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleOpen(doc)}
+                disabled={!doc.hasProject || !onOpenProject || openingId === doc.id}
+                title={
+                  !doc.hasProject
+                    ? 'Documento gerado antes da feature de reabertura'
+                    : 'Carregar este projeto no editor para adicionar evidências ou gerar nova versão'
+                }
+              >
+                {openingId === doc.id ? (
+                  <>
+                    <Loader2 size={14} className="spin" /> Abrindo...
+                  </>
+                ) : (
+                  <>
+                    <Pencil size={14} /> Abrir no editor
+                  </>
+                )}
+              </button>
               <a
                 className="btn btn-secondary btn-sm"
                 href={resolveAssetUrl(doc.tex)}
