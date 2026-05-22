@@ -44,14 +44,19 @@ export function ProjectForm({ project, onChange }: Props) {
           <input
             id="sprintName"
             type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            placeholder="Ex: 7"
+            inputMode="decimal"
+            pattern="[0-9]+(\.[0-9]+)*"
+            placeholder="Ex: 7, 13.2, 13.1.1"
             value={project.sprintName}
             onChange={(e) => {
-              // Aceita só dígitos — o LaTeX prefixa "Sprint " automaticamente.
-              const digits = e.target.value.replace(/\D/g, '');
-              set('sprintName', digits);
+              // Aceita dígitos e pontos (ex: 13.1.1). Bloqueia ponto inicial,
+              // pontos consecutivos e qualquer outro caractere. O LaTeX prefixa
+              // "Sprint " automaticamente.
+              const limpo = e.target.value
+                .replace(/[^0-9.]/g, '')
+                .replace(/^\.+/, '')
+                .replace(/\.{2,}/g, '.');
+              set('sprintName', limpo);
             }}
           />
         </div>
