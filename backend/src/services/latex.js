@@ -61,10 +61,29 @@ function parseBdd(text) {
     }
   }
   return {
-    dado: buckets.dado.join(' '),
-    quando: buckets.quando.join(' '),
-    entao: buckets.entao.join(' '),
+    dado: joinSteps(buckets.dado),
+    quando: joinSteps(buckets.quando),
+    entao: joinSteps(buckets.entao),
   };
+}
+
+// Junta múltiplos passos do mesmo bucket BDD em uma única frase legível.
+// O primeiro passo entra como está; os seguintes ganham conector " e ", com
+// o ponto final do passo anterior removido pra não duplicar (ex: "X. e Y" → "X e Y").
+// Isso resolve o problema antigo onde os passos ficavam colados sem pontuação:
+//   "acessa Menu > X o usuário executa Y o usuário confirma Z"
+// → "acessa Menu > X. E o usuário executa Y. E o usuário confirma Z"
+function joinSteps(steps) {
+  if (!steps.length) return '';
+  return steps
+    .map((s, i) => {
+      const limpo = s.replace(/[\s.,;:]+$/, '').trim();
+      if (i === 0) return limpo;
+      // Capitaliza primeira letra após o conector pra leitura ficar natural.
+      const cap = limpo.charAt(0).toUpperCase() + limpo.slice(1);
+      return `E ${cap}`;
+    })
+    .join('. ');
 }
 
 // Decide o título exibido do card no PDF:
