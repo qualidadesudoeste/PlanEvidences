@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Sparkles, Loader2, FileType, Download, AlertCircle } from 'lucide-react';
+import { Plus, Sparkles, Loader2, FileType, Download, AlertCircle, Save, Search } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
 import { ProjectForm } from '@/components/ProjectForm';
 import { ScenarioCard } from '@/components/ScenarioCard';
@@ -18,6 +18,7 @@ const STORAGE_KEY = 'qa-evidences-project';
 const SESSION_KEY = 'qa-evidences-session';
 
 const emptyProject: Project = {
+  qaPlanId: null,
   projectName: '',
   sprintName: '',
   version: '1.0',
@@ -86,12 +87,39 @@ function AppInner() {
     }
     return emptyProject;
   });
+
+  const [lastSavedProject, setLastSavedProject] = useState<Project>(() => {
+    try {
+      const saved = localStorage.getItem('qa-evidences-last-saved');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const scenarios = Array.isArray(parsed.scenarios) ? parsed.scenarios.map(migrateScenario) : [];
+        return { ...emptyProject, ...parsed, scenarios };
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const scenarios = Array.isArray(parsed.scenarios) ? parsed.scenarios.map(migrateScenario) : [];
+        return { ...emptyProject, ...parsed, scenarios };
+      }
+    } catch {
+      /* ignore */
+    }
+    return emptyProject;
+  });
+
   const [view, setView] = useState<'editor' | 'history'>('editor');
   const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
   const [lastDoc, setLastDoc] = useState<GeneratedDoc | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [qaImportOpen, setQaImportOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -100,6 +128,128 @@ function AppInner() {
     }, 500);
     return () => clearTimeout(t);
   }, [project]);
+
+  useEffect(() => {
+    localStorage.setItem('qa-evidences-last-saved', JSON.stringify(lastSavedProject));
+  }, [lastSavedProject]);
+
+  const isDirty = useMemo(() => {
+    return JSON.stringify(project) !== JSON.stringify(lastSavedProject);
+  }, [project, lastSavedProject]);
+
+  const matchScenario = useCallback((sc: Scenario, idx: number, term: string): boolean => {
+    if (!term.trim()) return true;
+    const cleanTerm = term.toLowerCase().trim();
+    const ctCode = `ct-${String(idx + 1).padStart(3, '0')}`;
+    if (ctCode.includes(cleanTerm)) return true;
+    if (sc.title && sc.title.toLowerCase().includes(cleanTerm)) return true;
+    if (sc.bdd && sc.bdd.toLowerCase().includes(cleanTerm)) return true;
+    if (sc.cardCodigo && sc.cardCodigo.toLowerCase().includes(cleanTerm)) return true;
+    if (sc.cardResumo && sc.cardResumo.toLowerCase().includes(cleanTerm)) return true;
+    const formattedCard = `card #${sc.cardCodigo}`.toLowerCase();
+    if (formattedCard.includes(cleanTerm)) return true;
+    return false;
+  }, []);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchQuery.trim()) {
+      const cleanTerm = searchQuery.toLowerCase().trim();
+      const matchIdx = project.scenarios.findIndex((s, idx) => {
+        const ctCode = `ct-${String(idx + 1).padStart(3, '0')}`;
+        if (ctCode.includes(cleanTerm)) return true;
+        if (s.title && s.title.toLowerCase().includes(cleanTerm)) return true;
+        if (s.bdd && s.bdd.toLowerCase().includes(cleanTerm)) return true;
+        if (s.cardCodigo && s.cardCodigo.toLowerCase().includes(cleanTerm)) return true;
+        if (s.cardResumo && s.cardResumo.toLowerCase().includes(cleanTerm)) return true;
+        const formattedCard = `card #${s.cardCodigo}`.toLowerCase();
+        if (formattedCard.includes(cleanTerm)) return true;
+        return false;
+      });
+
+      if (matchIdx !== -1) {
+        const matchId = project.scenarios[matchIdx].id;
+        const el = document.getElementById(`scenario-${matchId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          el.style.transition = 'box-shadow 0.4s, transform 0.4s';
+          el.style.boxShadow = '0 0 0 4px rgba(30, 158, 34, 0.35)';
+          el.style.transform = 'scale(1.01)';
+          setTimeout(() => {
+            el.style.boxShadow = '';
+            el.style.transform = '';
+          }, 1400);
+          toast({
+            variant: 'info',
+            title: 'Cenário localizado',
+            description: `Rolado até CT-${String(matchIdx + 1).padStart(3, '0')}`,
+          });
+        }
+      } else {
+        toast({
+          variant: 'warning',
+          title: 'Nenhum resultado',
+          description: 'Nenhum cenário corresponde à busca.',
+        });
+      }
+    }
+  };
+
+  const handleSavePlan = async (): Promise<boolean> => {
+    if (!project.qaPlanId) {
+      toast({
+        variant: 'error',
+        title: 'Não é possível salvar',
+        description: 'Este projeto foi criado manualmente e não está associado a um plano do QA Assistant.',
+      });
+      return false;
+    }
+
+    setSaving(true);
+    try {
+      const { salvarPlanoQA } = await import('@/lib/supabase');
+      await salvarPlanoQA(project.qaPlanId, project.scenarios);
+      setLastSavedProject(project);
+      toast({
+        variant: 'success',
+        title: 'Alterações salvas!',
+        description: 'Os cenários e evidências foram atualizados no Supabase.',
+      });
+      return true;
+    } catch (e) {
+      toast({
+        variant: 'error',
+        title: 'Erro ao salvar plano',
+        description: e instanceof Error ? e.message : 'Falha desconhecida',
+      });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const checkUnsavedChanges = async (actionLabel: string): Promise<boolean> => {
+    if (!isDirty) return true;
+
+    if (project.qaPlanId) {
+      const saveFirst = window.confirm(
+        `Você possui alterações não salvas no plano "${project.projectName || 'Sem nome'}". Deseja SALVAR estas alterações no Supabase antes de ${actionLabel}?`
+      );
+      if (saveFirst) {
+        const success = await handleSavePlan();
+        return success;
+      }
+      return window.confirm(`Atenção: Suas alterações serão PERDIDAS. Deseja continuar mesmo assim?`);
+    } else {
+      const exportFirst = window.confirm(
+        `Você possui alterações não salvas. Deseja exportar o projeto como arquivo JSON antes de ${actionLabel}?`
+      );
+      if (exportFirst) {
+        exportJson();
+        return true;
+      }
+      return window.confirm(`Atenção: Suas alterações serão PERDIDAS. Deseja continuar mesmo assim?`);
+    }
+  };
 
   const updateScenario = useCallback((id: string, updated: Scenario) => {
     setProject((p) => ({
@@ -195,7 +345,12 @@ function AppInner() {
     toast({ variant: 'success', title: 'Projeto exportado' });
   };
 
-  const importJson = () => fileInputRef.current?.click();
+  const importJson = async () => {
+    const ok = await checkUnsavedChanges('importar outro projeto');
+    if (ok) {
+      fileInputRef.current?.click();
+    }
+  };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -205,7 +360,9 @@ function AppInner() {
       try {
         const data = JSON.parse(String(reader.result));
         const scenarios = Array.isArray(data.scenarios) ? data.scenarios.map(migrateScenario) : [];
-        setProject({ ...emptyProject, ...data, scenarios });
+        const newProj = { ...emptyProject, ...data, scenarios };
+        setProject(newProj);
+        setLastSavedProject(newProj);
         toast({ variant: 'success', title: 'Projeto importado' });
       } catch {
         toast({ variant: 'error', title: 'JSON inválido' });
@@ -215,36 +372,50 @@ function AppInner() {
     e.target.value = '';
   };
 
-  const clearProject = () => {
-    if (!confirm('Deseja realmente limpar todo o projeto? Esta ação não pode ser desfeita.')) return;
+  const clearProject = async () => {
+    const ok = await checkUnsavedChanges('limpar o projeto');
+    if (!ok) return;
     setProject(emptyProject);
+    setLastSavedProject(emptyProject);
     setLastDoc(null);
     toast({ variant: 'info', title: 'Projeto limpo' });
   };
 
-  const handleImportFromQA = (
+  const handleImportFromQA = async (
     scenarios: Scenario[],
-    meta: { projeto: string; sprint: string; tela: string | null }
+    meta: { id: string; projeto: string; sprint: string; tela: string | null }
   ) => {
-    setProject((p) => ({
-      ...p,
-      projectName: p.projectName || meta.projeto,
-      sprintName: p.sprintName || meta.sprint,
+    const ok = await checkUnsavedChanges('importar este plano');
+    if (!ok) return false;
+
+    const newProj = {
+      ...emptyProject,
+      qaPlanId: meta.id,
+      projectName: meta.projeto,
+      sprintName: meta.sprint,
       scenarios,
-    }));
+    };
+    setProject(newProj);
+    setLastSavedProject(newProj);
     toast({
       variant: 'success',
       title: 'Plano importado do QA Assistant',
       description: `${scenarios.length} cenário(s) carregados.`,
     });
+    return true;
   };
 
   // Chamado pelo HistoryList quando o usuário clica "Abrir no editor". Carrega
   // o project_json salvo e troca para a aba Editor. A geração subsequente cria
   // um novo documento (novo ID), preservando o original no histórico.
-  const handleOpenFromHistory = (loaded: Project) => {
+  const handleOpenFromHistory = async (loaded: Project) => {
+    const ok = await checkUnsavedChanges('abrir este histórico');
+    if (!ok) return;
+
     const scenarios = Array.isArray(loaded.scenarios) ? loaded.scenarios.map(migrateScenario) : [];
-    setProject({ ...emptyProject, ...loaded, scenarios });
+    const newProj = { ...emptyProject, ...loaded, scenarios };
+    setProject(newProj);
+    setLastSavedProject(newProj);
     setLastDoc(null);
     setView('editor');
   };
@@ -286,10 +457,42 @@ function AppInner() {
                   <h1>Gerador de Evidências</h1>
                   <p>Preencha os dados, adicione cenários e gere a documentação automaticamente.</p>
                 </div>
-                <div className="header-actions">
+                 <div className="header-actions">
                   <Button variant="secondary" onClick={addScenario}>
                     <Plus size={16} /> Novo Cenário
                   </Button>
+                  {project.qaPlanId && (
+                    <Button
+                      variant={isDirty ? 'primary' : 'secondary'}
+                      onClick={handleSavePlan}
+                      disabled={saving}
+                      style={{ position: 'relative' }}
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 size={16} className="spin" /> Salvando...
+                        </>
+                      ) : (
+                        <>
+                          <Save size={16} /> Salvar Plano
+                          {isDirty && (
+                            <span
+                              style={{
+                                position: 'absolute',
+                                top: -2,
+                                right: -2,
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                backgroundColor: 'var(--danger, #ef4444)',
+                                border: '1px solid var(--card-bg, #fff)',
+                              }}
+                            />
+                          )}
+                        </>
+                      )}
+                    </Button>
+                  )}
                   <Button onClick={handleGenerate} disabled={generating}>
                     {generating ? (
                       <>
@@ -386,6 +589,49 @@ function AppInner() {
                   </Button>
                 </div>
 
+                {project.scenarios.length > 0 && (
+                  <div style={{ position: 'relative', width: '100%' }}>
+                    <Search
+                      size={16}
+                      style={{
+                        position: 'absolute',
+                        left: 12,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        color: 'var(--text-secondary)',
+                      }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Buscar por título, CT, BDD ou Card (ex: Card #23494)... [Pressione Enter para ir até o cenário]"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={handleSearchKeyDown}
+                      className="input"
+                      style={{ paddingLeft: 36, paddingRight: searchQuery ? 80 : 12, width: '100%', height: 40 }}
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        style={{
+                          position: 'absolute',
+                          right: 12,
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          fontWeight: 500,
+                          fontSize: 13,
+                        }}
+                      >
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {project.scenarios.length === 0 ? (
                   <div className="card">
                     <div className="empty-state">
@@ -406,8 +652,20 @@ function AppInner() {
                       return agruparCenariosPorCard(project.scenarios).map((g) => {
                         const titulo = tituloCardParaExibicao(g.codigo, g.resumo);
                         const temCard = !!g.codigo;
+                        const groupScenarios = g.scenarios;
+                        const hasMatchingScenario = groupScenarios.some((s) =>
+                          matchScenario(s, indiceGlobal.get(s.id) ?? 0, searchQuery)
+                        );
+
                         return (
-                          <div key={g.codigo || 'sem-card'} className="card-group">
+                          <div
+                            key={g.codigo || 'sem-card'}
+                            className="card-group"
+                            style={{
+                              opacity: searchQuery && !hasMatchingScenario ? 0.4 : 1,
+                              transition: 'opacity 0.3s',
+                            }}
+                          >
                             {temCard && (
                               <div className="card-group-header">
                                 <h3>{titulo}</h3>
@@ -422,23 +680,34 @@ function AppInner() {
                               </div>
                             )}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                              {g.scenarios.map((s) => (
-                                <ScenarioCard
-                                  key={s.id}
-                                  scenario={s}
-                                  index={indiceGlobal.get(s.id) ?? 0}
-                                  sessionId={sessionId}
-                                  onChange={(u) => updateScenario(s.id, u)}
-                                  onRemove={() => removeScenario(s.id)}
-                                  onDragStart={() => setDraggingId(s.id)}
-                                  onDragOver={(e) => e.preventDefault()}
-                                  onDrop={() => {
-                                    if (draggingId) reorderScenario(draggingId, s.id);
-                                    setDraggingId(null);
-                                  }}
-                                  isDragging={draggingId === s.id}
-                                />
-                              ))}
+                              {g.scenarios.map((s) => {
+                                const idx = indiceGlobal.get(s.id) ?? 0;
+                                const isMatched = matchScenario(s, idx, searchQuery);
+                                return (
+                                  <div
+                                    key={s.id}
+                                    style={{
+                                      opacity: searchQuery && !isMatched ? 0.35 : 1,
+                                      transition: 'opacity 0.3s',
+                                    }}
+                                  >
+                                    <ScenarioCard
+                                      scenario={s}
+                                      index={idx}
+                                      sessionId={sessionId}
+                                      onChange={(u) => updateScenario(s.id, u)}
+                                      onRemove={() => removeScenario(s.id)}
+                                      onDragStart={() => setDraggingId(s.id)}
+                                      onDragOver={(e) => e.preventDefault()}
+                                      onDrop={() => {
+                                        if (draggingId) reorderScenario(draggingId, s.id);
+                                        setDraggingId(null);
+                                      }}
+                                      isDragging={draggingId === s.id}
+                                    />
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         );
@@ -449,7 +718,12 @@ function AppInner() {
               </section>
             </div>
 
-            <RightPanel scenarios={project.scenarios} lastDoc={lastDoc} />
+            <RightPanel
+              scenarios={project.scenarios}
+              lastDoc={lastDoc}
+              searchQuery={searchQuery}
+              onChangeSearchQuery={setSearchQuery}
+            />
           </>
         ) : (
           <div className="content-left">

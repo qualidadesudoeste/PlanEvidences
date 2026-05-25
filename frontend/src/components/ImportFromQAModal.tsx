@@ -7,7 +7,10 @@ import type { Scenario } from '@/types';
 interface Props {
   open: boolean;
   onClose: () => void;
-  onImport: (scenarios: Scenario[], meta: { projeto: string; sprint: string; tela: string | null }) => void;
+  onImport: (
+    scenarios: Scenario[],
+    meta: { id: string; projeto: string; sprint: string; tela: string | null }
+  ) => void | boolean | Promise<void | boolean>;
 }
 
 export function ImportFromQAModal({ open, onClose, onImport }: Props) {
@@ -65,8 +68,15 @@ export function ImportFromQAModal({ open, onClose, onImport }: Props) {
         cardCaminho: s.cardCaminho ?? null,
         caseId: s.caseId ?? null,
       }));
-      onImport(mapped, { projeto: full.projeto, sprint: full.sprint, tela: full.tela });
-      onClose();
+      const success = await onImport(mapped, {
+        id: full.id,
+        projeto: full.projeto,
+        sprint: full.sprint,
+        tela: full.tela,
+      });
+      if (success !== false) {
+        onClose();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar plano');
     } finally {

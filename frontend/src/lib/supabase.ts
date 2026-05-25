@@ -73,3 +73,33 @@ export async function carregarPlanoQA(id: string): Promise<QATestPlan> {
   if (error) throw error;
   return data as QATestPlan;
 }
+
+export async function salvarPlanoQA(id: string, scenarios: any[]): Promise<void> {
+  const supa = getSupabase();
+  if (!supa) throw new Error('Supabase não configurado.');
+
+  // Primeiro buscamos o plano existente para preservar outras propriedades de resultado_json
+  const { data: existing, error: getError } = await supa
+    .from('test_plans')
+    .select('resultado_json')
+    .eq('id', id)
+    .single();
+
+  if (getError) throw getError;
+
+  const resultado_json = {
+    ...(existing?.resultado_json || {}),
+    scenarios_bdd: scenarios,
+  };
+
+  const { error } = await supa
+    .from('test_plans')
+    .update({
+      resultado_json,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+
+  if (error) throw error;
+}
+

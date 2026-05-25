@@ -22,6 +22,7 @@ export interface Scenario {
 }
 
 export interface Project {
+  qaPlanId?: string | null;
   projectName: string;
   sprintName: string;
   version: string;
