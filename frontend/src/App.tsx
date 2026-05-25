@@ -11,6 +11,7 @@ import { Progress } from '@/components/ui/progress';
 import { ThemeProvider } from '@/hooks/useTheme';
 import { ToastsProvider, useToast } from '@/hooks/useToast';
 import { generateDocument, resolveAssetUrl } from '@/lib/api';
+import { salvarPlanoQA } from '@/lib/supabase';
 import { agruparCenariosPorCard, tituloCardParaExibicao } from '@/lib/utils';
 import type { GeneratedDoc, Project, Scenario } from '@/types';
 
@@ -206,7 +207,6 @@ function AppInner() {
 
     setSaving(true);
     try {
-      const { salvarPlanoQA } = await import('@/lib/supabase');
       await salvarPlanoQA(project.qaPlanId, project.scenarios);
       setLastSavedProject(project);
       toast({

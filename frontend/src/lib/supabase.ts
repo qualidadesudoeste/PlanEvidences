@@ -79,13 +79,15 @@ export async function salvarPlanoQA(id: string, scenarios: any[]): Promise<void>
   if (!supa) throw new Error('Supabase não configurado.');
 
   // Primeiro buscamos o plano existente para preservar outras propriedades de resultado_json
-  const { data: existing, error: getError } = await supa
+  const { data, error: getError } = await supa
     .from('test_plans')
     .select('resultado_json')
     .eq('id', id)
     .single();
 
   if (getError) throw getError;
+
+  const existing = data as any;
 
   const resultado_json = {
     ...(existing?.resultado_json || {}),
