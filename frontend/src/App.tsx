@@ -206,22 +206,39 @@ function AppInner() {
     }
 
     setSaving(true);
+    let supabaseOk = false;
     try {
+      // 1. Salva na nuvem (Supabase)
       await salvarPlanoQA(project.qaPlanId, project.scenarios);
+      supabaseOk = true;
       setLastSavedProject(project);
+
+      // 2. Gera o documento para ir para o Histórico automaticamente
+      const doc = await generateDocument(project);
+      setLastDoc(doc);
+
       toast({
         variant: 'success',
-        title: 'Alterações salvas!',
-        description: 'Os cenários e evidências foram atualizados no Supabase.',
+        title: 'Plano salvo e gerado!',
+        description: 'Alterações salvas no Supabase e documento registrado no Histórico com sucesso.',
       });
       return true;
     } catch (e) {
-      toast({
-        variant: 'error',
-        title: 'Erro ao salvar plano',
-        description: e instanceof Error ? e.message : 'Falha desconhecida',
-      });
-      return false;
+      if (supabaseOk) {
+        toast({
+          variant: 'warning',
+          title: 'Salvo no Supabase, mas falhou no Histórico',
+          description: e instanceof Error ? e.message : 'Não foi possível compilar o documento para o histórico.',
+        });
+        return true; // Retorna true pois a salvaguarda principal do plano ocorreu
+      } else {
+        toast({
+          variant: 'error',
+          title: 'Erro ao salvar plano',
+          description: e instanceof Error ? e.message : 'Falha ao salvar no Supabase.',
+        });
+        return false;
+      }
     } finally {
       setSaving(false);
     }
