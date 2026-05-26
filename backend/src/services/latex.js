@@ -168,7 +168,7 @@ ${cenariosTex}${tail}`;
   return `\\documentclass[12pt,a4paper]{article}
 \\usepackage[utf8]{inputenc}
 \\usepackage[T1]{fontenc}
-\\usepackage[brazil]{babel}
+\\usepackage[shorthands=off,brazil]{babel}
 \\usepackage{graphicx}
 \\usepackage{geometry}
 \\usepackage{fancyhdr}
