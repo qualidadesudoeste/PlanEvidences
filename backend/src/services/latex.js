@@ -339,16 +339,12 @@ function renderScenario(sc, idx, uploadsDir, total, opts = {}) {
   const images = Array.isArray(sc.images) ? sc.images : [];
   let resultBlock = '';
   if (images.length > 0) {
-    const firstAbs = path
-      .join(uploadsDir, images[0].path)
-      .replace(/\\/g, '/');
-    resultBlock = `\\resultadoObtido{${firstAbs}}\n`;
+    const firstRel = images[0].path.replace(/\\/g, '/');
+    resultBlock = `\\resultadoObtido{${firstRel}}\n`;
     for (let i = 1; i < images.length; i++) {
-      const abs = path
-        .join(uploadsDir, images[i].path)
-        .replace(/\\/g, '/');
+      const rel = images[i].path.replace(/\\/g, '/');
       resultBlock +=
-        `\\begin{center}\\includegraphics[width=\\textwidth,height=0.65\\textheight,keepaspectratio]{${abs}}\\end{center}\n\\vspace{0.3cm}\n`;
+        `\\begin{center}\\includegraphics[width=\\textwidth,height=0.65\\textheight,keepaspectratio]{${rel}}\\end{center}\n\\vspace{0.3cm}\n`;
     }
   }
 

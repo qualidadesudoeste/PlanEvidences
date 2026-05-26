@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { access } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 async function commandExists(cmd) {
@@ -29,14 +29,15 @@ export async function compilePdf(texPath, cwd) {
   const baseName = fileName.replace(/\.tex$/, '');
   const pdfPath = path.join(cwd, `${baseName}.pdf`);
 
+  let lastResult = null;
   const hasLatexmk = await commandExists('latexmk');
   if (hasLatexmk) {
-    const r = await runCmd(
+    lastResult = await runCmd(
       'latexmk',
       ['-pdf', '-interaction=nonstopmode', '-halt-on-error', fileName],
       cwd
     );
-    if (r.code === 0 && (await fileExists(pdfPath))) {
+    if (lastResult.code === 0 && (await fileExists(pdfPath))) {
       return { ok: true, pdfPath };
     }
   }
@@ -44,12 +45,46 @@ export async function compilePdf(texPath, cwd) {
   const hasPdflatex = await commandExists('pdflatex');
   if (hasPdflatex) {
     for (let i = 0; i < 2; i++) {
-      await runCmd('pdflatex', ['-interaction=nonstopmode', fileName], cwd);
+      lastResult = await runCmd('pdflatex', ['-interaction=nonstopmode', fileName], cwd);
     }
     if (await fileExists(pdfPath)) {
       return { ok: true, pdfPath };
     }
-    return { ok: false, error: 'pdflatex executou mas o PDF não foi produzido. Verifique erros de LaTeX.' };
+
+    // Compilation failed. Try to extract LaTeX errors from the log file.
+    const logPath = path.join(cwd, `${baseName}.log`);
+    let latexErrorDetails = '';
+    if (await fileExists(logPath)) {
+      try {
+        const logContent = await readFile(logPath, 'utf-8');
+        const lines = logContent.split(/\r?\n/);
+        const errors = [];
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].startsWith('!')) {
+            // Grab the line with '!' and the next 4 lines
+            errors.push(lines.slice(i, i + 5).join('\n'));
+            i += 4;
+          }
+        }
+        if (errors.length > 0) {
+          latexErrorDetails = errors.join('\n\n');
+        } else {
+          // If no lines started with '!', grab the last 30 lines
+          latexErrorDetails = lines.slice(-30).join('\n');
+        }
+      } catch (err) {
+        latexErrorDetails = `Erro ao ler arquivo de log: ${err.message}`;
+      }
+    } else {
+      latexErrorDetails = `Nenhum arquivo de log encontrado (${baseName}.log).\nStdout: ${lastResult?.stdout || ''}\nStderr: ${lastResult?.stderr || ''}`;
+    }
+
+    console.error(`[compilePdf] Erro na compilação do LaTeX:\n${latexErrorDetails}`);
+
+    return {
+      ok: false,
+      error: `pdflatex executou mas o PDF não foi produzido. Detalhes do erro:\n${latexErrorDetails}`,
+    };
   }
 
   return {
