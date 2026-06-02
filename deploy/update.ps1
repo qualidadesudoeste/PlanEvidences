@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # PlanEvidences — atualiza no Smart Sig Runner (git pull + rebuild + restart)
 # =============================================================================
 # Idempotente. Roda como Administrator se for usar -RestartService.
