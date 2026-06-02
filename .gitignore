@@ -17,6 +17,9 @@ generated/*
 *.out
 *.synctex.gz
 *.toc
+*.nav
+*.snm
+*.vrb
 
 # Editor
 .vscode/
