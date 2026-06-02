@@ -31,7 +31,7 @@ try {
         if (-not $gitCmd) {
             Write-Host '[AVISO] git não encontrado. Pulando pull (use -SkipPull pra silenciar).' -ForegroundColor Yellow
         } else {
-            git pull --ff-only 2>&1 | Out-Host
+            git pull --ff-only
             if ($LASTEXITCODE -ne 0) {
                 throw 'git pull falhou (resolva conflitos manualmente ou use -SkipPull)'
             }
@@ -42,10 +42,10 @@ try {
     Write-Section 'Sincronizando dependências do backend'
     Push-Location (Join-Path $repoRoot 'backend')
     try {
-        npm ci --no-audit --no-fund 2>&1 | Out-Host
+        npm ci --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) {
             Write-Host '  npm ci falhou — caindo pra npm install' -ForegroundColor Yellow
-            npm install --no-audit --no-fund 2>&1 | Out-Host
+            npm install --no-audit --no-fund
         }
     } finally { Pop-Location }
 
@@ -53,14 +53,14 @@ try {
     Write-Section 'Sincronizando dependências do frontend'
     Push-Location (Join-Path $repoRoot 'frontend')
     try {
-        npm ci --no-audit --no-fund 2>&1 | Out-Host
+        npm ci --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) {
             Write-Host '  npm ci falhou — caindo pra npm install' -ForegroundColor Yellow
-            npm install --no-audit --no-fund 2>&1 | Out-Host
+            npm install --no-audit --no-fund
         }
 
         Write-Section 'Build do frontend'
-        npm run build 2>&1 | Out-Host
+        npm run build
         if ($LASTEXITCODE -ne 0) { throw 'npm run build falhou' }
     } finally { Pop-Location }
 
@@ -79,7 +79,7 @@ try {
             if (-not $svc) {
                 Write-Host "[AVISO] Serviço '$ServiceName' não está instalado. Use service-install.ps1." -ForegroundColor Yellow
             } else {
-                nssm restart $ServiceName 2>&1 | Out-Host
+                nssm restart $ServiceName
                 Start-Sleep -Seconds 2
                 $svc = Get-Service -Name $ServiceName
                 if ($svc.Status -eq 'Running') {

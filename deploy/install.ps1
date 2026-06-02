@@ -88,10 +88,10 @@ if (-not (Test-Path $frontendEnv)) {
 Write-Section 'Instalando dependências do backend'
 Push-Location (Join-Path $repoRoot 'backend')
 try {
-    npm ci --no-audit --no-fund 2>&1 | Out-Host
+    npm ci --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) {
         Write-Host '  npm ci falhou — tentando npm install' -ForegroundColor Yellow
-        npm install --no-audit --no-fund 2>&1 | Out-Host
+        npm install --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) { throw 'npm install do backend falhou' }
     }
 } finally { Pop-Location }
@@ -100,15 +100,15 @@ try {
 Write-Section 'Instalando dependências do frontend'
 Push-Location (Join-Path $repoRoot 'frontend')
 try {
-    npm ci --no-audit --no-fund 2>&1 | Out-Host
+    npm ci --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) {
         Write-Host '  npm ci falhou — tentando npm install' -ForegroundColor Yellow
-        npm install --no-audit --no-fund 2>&1 | Out-Host
+        npm install --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) { throw 'npm install do frontend falhou' }
     }
 
     Write-Section 'Gerando build do frontend (vite build)'
-    npm run build 2>&1 | Out-Host
+    npm run build
     if ($LASTEXITCODE -ne 0) { throw 'npm run build falhou' }
 } finally { Pop-Location }
 
