@@ -12,19 +12,45 @@ const SECRET_KEY = process.env.STORAGE_SECRET_ACCESS_KEY;
 const BUCKET = process.env.STORAGE_BUCKET;
 const PUBLIC_URL = (process.env.STORAGE_PUBLIC_URL || '').replace(/\/$/, '');
 
-if (!ENDPOINT || !ACCESS_KEY || !SECRET_KEY || !BUCKET || !PUBLIC_URL) {
-  console.warn(
-    '[storage] Não totalmente configurado. Faltam vars: ' +
-      [
-        !ENDPOINT && 'STORAGE_ENDPOINT',
-        !ACCESS_KEY && 'STORAGE_ACCESS_KEY_ID',
-        !SECRET_KEY && 'STORAGE_SECRET_ACCESS_KEY',
-        !BUCKET && 'STORAGE_BUCKET',
-        !PUBLIC_URL && 'STORAGE_PUBLIC_URL',
-      ]
-        .filter(Boolean)
-        .join(', ')
-  );
+function missingStorageVars() {
+  return [
+    !ENDPOINT && 'STORAGE_ENDPOINT',
+    !ACCESS_KEY && 'STORAGE_ACCESS_KEY_ID',
+    !SECRET_KEY && 'STORAGE_SECRET_ACCESS_KEY',
+    !BUCKET && 'STORAGE_BUCKET',
+    !PUBLIC_URL && 'STORAGE_PUBLIC_URL',
+  ].filter(Boolean);
+}
+
+const _missing = missingStorageVars();
+if (_missing.length > 0) {
+  console.warn('[storage] Não totalmente configurado. Faltam vars: ' + _missing.join(', '));
+}
+
+// Throw uma StorageNotConfiguredError com mensagem amigável ANTES da chamada S3.
+// O AWS SDK estouraria "No value provided for input HTTP label: Bucket", que é
+// críptico e não diz ao operador o que fazer.
+class StorageNotConfiguredError extends Error {
+  constructor(missing) {
+    super(
+      'Storage de imagens não está configurado. Defina no backend/.env: ' +
+        missing.join(', ') +
+        '. Reinicie o backend depois. Veja backend/.env.example pra exemplos (Supabase Storage, R2, MinIO).'
+    );
+    this.name = 'StorageNotConfiguredError';
+    this.code = 'STORAGE_NOT_CONFIGURED';
+    this.status = 503;
+    this.missing = missing;
+  }
+}
+
+function assertStorageReady() {
+  const missing = missingStorageVars();
+  if (missing.length > 0) throw new StorageNotConfiguredError(missing);
+}
+
+export function storageReady() {
+  return missingStorageVars().length === 0;
 }
 
 export const s3 = new S3Client({
@@ -32,8 +58,8 @@ export const s3 = new S3Client({
   endpoint: ENDPOINT,
   forcePathStyle: true,
   credentials: {
-    accessKeyId: ACCESS_KEY,
-    secretAccessKey: SECRET_KEY,
+    accessKeyId: ACCESS_KEY || 'unset',
+    secretAccessKey: SECRET_KEY || 'unset',
   },
 });
 
@@ -59,6 +85,7 @@ export function keyFromUrl(url) {
 }
 
 export async function putObject(key, body, contentType) {
+  assertStorageReady();
   await s3.send(
     new PutObjectCommand({
       Bucket: BUCKET,
@@ -72,10 +99,12 @@ export async function putObject(key, body, contentType) {
 
 export async function deleteObject(key) {
   if (!key) return;
+  assertStorageReady();
   await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
 }
 
 export async function getObjectBuffer(key) {
+  assertStorageReady();
   const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
   const chunks = [];
   for await (const chunk of res.Body) chunks.push(chunk);

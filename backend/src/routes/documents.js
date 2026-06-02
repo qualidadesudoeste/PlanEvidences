@@ -66,27 +66,31 @@ router.post('/generate', async (req, res, next) => {
       }
 
       const createdAt = new Date();
-      await pool.query(
-        `INSERT INTO documents
-          (id, project_name, client_name, sprint_name, version, redator, base_name, tex_url, tex_key, pdf_url, pdf_key, pdf_error, created_at, project_json)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-        [
-          docId,
-          project.projectName,
-          project.clientName,
-          project.sprintName,
-          project.version,
-          project.redator,
-          safeBase,
-          texUrl,
-          texKey,
-          pdfUrl,
-          pdfKey,
-          pdfResult.ok ? null : pdfResult.error || 'pdflatex não encontrado',
-          createdAt,
-          JSON.stringify(project),
-        ]
-      );
+      // Salva no histórico se Postgres está configurado. Sem DB, a geração ainda
+      // funciona — só não fica histórico persistido.
+      if (pool) {
+        await pool.query(
+          `INSERT INTO documents
+            (id, project_name, client_name, sprint_name, version, redator, base_name, tex_url, tex_key, pdf_url, pdf_key, pdf_error, created_at, project_json)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+          [
+            docId,
+            project.projectName,
+            project.clientName,
+            project.sprintName,
+            project.version,
+            project.redator,
+            safeBase,
+            texUrl,
+            texKey,
+            pdfUrl,
+            pdfKey,
+            pdfResult.ok ? null : pdfResult.error || 'pdflatex não encontrado',
+            createdAt,
+            JSON.stringify(project),
+          ]
+        );
+      }
 
       res.json({
         id: docId,
@@ -112,6 +116,7 @@ router.post('/generate', async (req, res, next) => {
 
 router.get('/', async (_req, res, next) => {
   try {
+    if (!pool) return res.json({ items: [] });
     const result = await pool.query(
       'SELECT * FROM documents ORDER BY created_at DESC LIMIT 200'
     );
@@ -123,6 +128,7 @@ router.get('/', async (_req, res, next) => {
 
 router.get('/:id/project', async (req, res, next) => {
   try {
+    if (!pool) return res.status(404).json({ error: 'Histórico desativado — DATABASE_URL não configurada.' });
     const result = await pool.query(
       'SELECT project_json FROM documents WHERE id = $1',
       [req.params.id]
@@ -142,6 +148,7 @@ router.get('/:id/project', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
+    if (!pool) return res.json({ ok: true });
     const id = req.params.id;
     const result = await pool.query('SELECT tex_key, pdf_key FROM documents WHERE id = $1', [id]);
     const row = result.rows[0];

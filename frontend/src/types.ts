@@ -54,3 +54,70 @@ export interface GeneratedDoc {
 export function scenarioCode(index: number): string {
   return `CT-${String(index + 1).padStart(3, '0')}`;
 }
+
+// ---------- QA Assistant (gerador de casos a partir de HU) ----------
+
+export type QAProvider = 'anthropic' | 'openai' | 'gemini';
+export type QACriticidade = 'alta' | 'media' | 'baixa';
+export type QATipoSistema = 'web' | 'mobile' | 'desktop' | 'api' | 'ia';
+
+export interface QACardCenario {
+  numero: number;
+  titulo: string;
+  dado: string;
+  quando: string;
+  entao: string;
+}
+
+export interface QACard {
+  codigo: string | null;
+  resumo: string;
+  caminho?: string | null;
+  categoria?: string | null;
+  descricaoInicial?: string | null;
+  cenarios?: QACardCenario[];
+  criterios?: string[];
+}
+
+export interface QACase {
+  id: string;
+  titulo: string;
+  tipo?: string;
+  prioridade?: QACriticidade;
+  preCondicoes?: string[];
+  passos?: string[];
+  resultadoEsperado?: string;
+  dadosTeste?: string;
+}
+
+export interface QACardComCasos {
+  codigo: string;
+  resumo: string;
+  caminho?: string | null;
+  casos: QACase[];
+}
+
+export interface QAAnaliseGlobal {
+  qualidade?: QACriticidade;
+  ambiguidades?: string[];
+  gapsIdentificados?: string[];
+  riscosDominio?: Array<{ nivel: string; descricao: string }>;
+  recomendacoes?: string[];
+}
+
+export interface QAAnaliseResult {
+  cards: QACardComCasos[];
+  analiseGlobal?: QAAnaliseGlobal;
+}
+
+export interface QAServerStatus {
+  serverConfigured: boolean;
+  providers: { anthropic: boolean; openai: boolean; gemini: boolean };
+  defaultProvider: QAProvider | null;
+}
+
+export interface QAAIConfig {
+  provider: QAProvider;
+  model: string;
+  apiKey: string;
+}

@@ -1,17 +1,19 @@
-import { FileText, History, Moon, Sun, Download, Upload, Sparkles, Trash2, Database } from 'lucide-react';
+import { FileText, History, Moon, Sun, Download, Upload, Sparkles, Trash2, Database, FlaskConical } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
 import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  view: 'editor' | 'history';
-  onChangeView: (v: 'editor' | 'history') => void;
-  onExport: () => void;
-  onImport: () => void;
-  onImportFromQA: () => void;
-  onClear: () => void;
-  scenarioCount: number;
-  redator: string;
-  clientName: string;
+  // Evidences-specific (omitir quando o Sidebar é renderizado em outras rotas)
+  view?: 'editor' | 'history';
+  onChangeView?: (v: 'editor' | 'history') => void;
+  onExport?: () => void;
+  onImport?: () => void;
+  onImportFromQA?: () => void;
+  onClear?: () => void;
+  scenarioCount?: number;
+  redator?: string;
+  clientName?: string;
 }
 
 export function Sidebar({
@@ -33,6 +35,10 @@ export function Sidebar({
     .join('')
     .toUpperCase();
 
+  const showEvidencesNav = onChangeView !== undefined;
+  const showProjectActions =
+    onExport !== undefined || onImport !== undefined || onImportFromQA !== undefined || onClear !== undefined;
+
   return (
     <aside className="sidebar">
       <div className="sidebar-top">
@@ -42,60 +48,102 @@ export function Sidebar({
           </div>
           <div className="logo-text">
             <h1>PlanEvidences</h1>
-            <span>QA Evidence Docs</span>
+            <span>QA Suite</span>
           </div>
         </div>
 
         <nav className="sidebar-menu">
-          <button
-            type="button"
-            className={cn('menu-item', view === 'editor' && 'active')}
-            onClick={() => onChangeView('editor')}
+          <div className="menu-section">Aplicações</div>
+
+          <NavLink
+            to="/qa"
+            className={({ isActive }) => cn('menu-item', isActive && 'active')}
           >
             <span className="menu-icon">
-              <FileText size={18} />
+              <FlaskConical size={18} />
             </span>
-            Editor
-            {scenarioCount > 0 && <span className="menu-badge">{scenarioCount}</span>}
-          </button>
+            Gerador de Casos
+          </NavLink>
 
-          <button
-            type="button"
-            className={cn('menu-item', view === 'history' && 'active')}
-            onClick={() => onChangeView('history')}
+          <NavLink
+            to="/evidences"
+            className={({ isActive }) => cn('menu-item', isActive && 'active')}
           >
             <span className="menu-icon">
-              <History size={18} />
+              <Sparkles size={18} />
             </span>
-            Histórico
-          </button>
+            Editor de Evidências
+          </NavLink>
 
-          <div className="menu-section">Projeto</div>
+          {showEvidencesNav && (
+            <>
+              <div className="menu-section">Evidências</div>
 
-          <button type="button" className="menu-item" onClick={onExport}>
-            <span className="menu-icon">
-              <Download size={18} />
-            </span>
-            Exportar JSON
-          </button>
-          <button type="button" className="menu-item" onClick={onImport}>
-            <span className="menu-icon">
-              <Upload size={18} />
-            </span>
-            Importar JSON
-          </button>
-          <button type="button" className="menu-item" onClick={onImportFromQA}>
-            <span className="menu-icon">
-              <Database size={18} />
-            </span>
-            Importar do QA Assistant
-          </button>
-          <button type="button" className="menu-item danger" onClick={onClear}>
-            <span className="menu-icon">
-              <Trash2 size={18} />
-            </span>
-            Limpar tudo
-          </button>
+              <button
+                type="button"
+                className={cn('menu-item', view === 'editor' && 'active')}
+                onClick={() => onChangeView?.('editor')}
+              >
+                <span className="menu-icon">
+                  <FileText size={18} />
+                </span>
+                Editor
+                {scenarioCount !== undefined && scenarioCount > 0 && (
+                  <span className="menu-badge">{scenarioCount}</span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className={cn('menu-item', view === 'history' && 'active')}
+                onClick={() => onChangeView?.('history')}
+              >
+                <span className="menu-icon">
+                  <History size={18} />
+                </span>
+                Histórico
+              </button>
+            </>
+          )}
+
+          {showProjectActions && (
+            <>
+              <div className="menu-section">Projeto</div>
+
+              {onExport && (
+                <button type="button" className="menu-item" onClick={onExport}>
+                  <span className="menu-icon">
+                    <Download size={18} />
+                  </span>
+                  Exportar JSON
+                </button>
+              )}
+              {onImport && (
+                <button type="button" className="menu-item" onClick={onImport}>
+                  <span className="menu-icon">
+                    <Upload size={18} />
+                  </span>
+                  Importar JSON
+                </button>
+              )}
+              {onImportFromQA && (
+                <button type="button" className="menu-item" onClick={onImportFromQA}>
+                  <span className="menu-icon">
+                    <Database size={18} />
+                  </span>
+                  Importar do QA Assistant
+                </button>
+              )}
+              {onClear && (
+                <button type="button" className="menu-item danger" onClick={onClear}>
+                  <span className="menu-icon">
+                    <Trash2 size={18} />
+                  </span>
+                  Limpar tudo
+                </button>
+              )}
+            </>
+          )}
         </nav>
       </div>
 

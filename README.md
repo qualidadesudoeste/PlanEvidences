@@ -1,160 +1,269 @@
-# PlanEvidences — Gerador de Evidências de Teste QA
+# PlanEvidences
 
-Sistema web para geração automática de documentação de evidências de testes em LaTeX e PDF, com histórico persistente.
+QA Suite unificada — gerador de casos de teste a partir de HU (com IA) **+** editor de evidências (anexa prints e gera PDF em LaTeX). Single-page React + um Node servindo tudo.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  /qa          Gerador de Casos (cola HU → IA → BDD)         │
+│  /evidences   Editor de Evidências (anexa prints → PDF)     │
+│  /api/*       Express (LaTeX, upload S3, proxy IA)          │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## Stack
 
-- **Frontend:** React + TypeScript + Vite + CSS custom (hospedado no Vercel)
-- **Backend:** Node + Express + Multer + Sharp + LaTeX (hospedado no Render via Docker)
-- **Storage + Banco:** Supabase (free tier, sem cartão de crédito)
-- Compatível com qualquer S3-compatible (R2, AWS S3, MinIO) trocando as env vars
+| Camada | Tech |
+|--------|------|
+| Frontend | React 18 + TypeScript + Vite + Tailwind + Radix |
+| Backend | Node 18+ + Express + Multer + Sharp + LaTeX (pdflatex) |
+| IA | Anthropic / OpenAI / Gemini (escolha por requisição ou via env) |
+| Banco | Supabase (planos, execuções, falhas) — opcional pro gerador básico |
+| Storage | S3-compatível (Supabase Storage / R2 / MinIO) — só pras evidências |
+| Postgres | Histórico de PDFs gerados — opcional |
 
 ## Estrutura
 
 ```
-/frontend    Aplicação React
-/backend     API Express
-/templates   Template LaTeX base (referência)
+/backend         Express + LaTeX (porta 4500) — também serve frontend/dist em prod
+/frontend        React + Vite (dev na 5173, build → frontend/dist)
+/deploy          Scripts PowerShell pro Smart Sig Runner (Windows Server)
 ```
 
 ---
 
 ## Desenvolvimento local
 
-### Pré-requisitos
-- Node.js 18+
-- LaTeX opcional (MiKTeX/TeX Live se quiser gerar PDF local; sem ele só sai `.tex`)
-- Conta no Cloudflare R2 e Neon (mesmas creds de produção, ou crie um bucket/db separado pra dev)
+**Pré-requisitos:** Node 18+, npm, opcional MiKTeX/TeX Live (sem ele, gera só `.tex`).
 
-### Subir
-```bash
-# Backend (porta 3001)
+```powershell
+# Terminal 1 — backend
 cd backend
-cp .env.example .env  # preencha DATABASE_URL e R2_*
+copy .env.example .env   # edite com chaves de IA / Supabase / etc
 npm install
-npm run dev
+npm run dev               # http://localhost:4500
 
-# Frontend (porta 5173) — em outro terminal
+# Terminal 2 — frontend (HMR)
 cd frontend
+copy .env.example .env   # edite com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY
 npm install
-npm run dev
+npm run dev               # http://localhost:5173 (proxy /api → :4500)
 ```
 
-Acesse http://localhost:5173.
+A app abre na `5173` em dev. Em produção é `4500` (mesmo Node servindo o build).
 
 ---
 
-## Deploy
+## Deploy: Smart Sig Runner (Windows Server)
 
-Pré-requisito: contas configuradas no Cloudflare R2 e Neon (instruções abaixo).
+Setup recomendado: **um único Node** servindo o frontend buildado e a API, registrado como Windows Service via `nssm`.
 
-### 1. Supabase (banco + storage, sem cartão)
+### 1. Clonar e instalar
 
-1. https://supabase.com → **Start your project** (login com GitHub)
-2. **New project**:
-   - Name: `planevidences`
-   - Database password: gere uma forte (anote!)
-   - Region: a mais perto do seu Render (ex: `East US`)
-3. Aguarde ~2min até o projeto provisionar.
+```powershell
+# Como qualquer usuário com acesso de escrita
+cd C:\sig
+git clone <url-do-repo> PlanEvidences
+cd PlanEvidences
 
-**Pegue a connection string do Postgres:**
-- **Settings (engrenagem) → Database → Connection string**
-- Aba **URI** → modo **Transaction (pooler)** → copie a string completa
-- Substitua `[YOUR-PASSWORD]` pela senha que você definiu
-- Vai ficar tipo: `postgresql://postgres.xxxx:senha@aws-0-us-east-1.pooler.supabase.com:5432/postgres`
+# Pré-flight + npm install + build do frontend
+.\deploy\install.ps1
+```
 
-**Crie o bucket de storage:**
-- Menu lateral → **Storage** → **New bucket**
-- Name: `planevidences`
-- **Public bucket:** marque (ativa)
-- Create
+O script verifica Node/npm/git/MiKTeX, cria os `.env` a partir dos `.env.example` se não existirem, e roda `npm ci` + `npm run build`.
 
-**Gere as credenciais S3:**
-- **Settings → Storage → S3 Connection**
-- Anote o **Endpoint** (algo como `https://SEU-PROJETO.supabase.co/storage/v1/s3`)
-- Anote a **Region** (geralmente `us-east-1` ou similar)
-- Clique em **New access key** → cria
-- Anote **Access key ID** e **Secret access key** (aparece uma única vez)
+### 2. Configurar credenciais
 
-**URL pública do bucket** (você monta):
-- Formato: `https://SEU-PROJETO.supabase.co/storage/v1/object/public/planevidences`
+Edite os dois `.env`:
 
-### 2. Backend no Render
+```powershell
+notepad backend\.env
+notepad frontend\.env
+```
 
-1. https://render.com → login com GitHub
-2. **New → Web Service** → seleciona o repo
-3. Configurações:
-   - **Root Directory:** `backend`
-   - **Environment:** Docker
-   - **Plan:** Free
-   - **Health Check Path:** `/api/health`
-4. **Environment Variables**:
-   | Variável | Valor |
-   |---|---|
-   | `DATABASE_URL` | Connection string Supabase (URI Transaction pooler) |
-   | `STORAGE_ENDPOINT` | `https://SEU-PROJETO.supabase.co/storage/v1/s3` |
-   | `STORAGE_REGION` | `us-east-1` (ou a que Supabase mostrar) |
-   | `STORAGE_ACCESS_KEY_ID` | Access key do Supabase Storage |
-   | `STORAGE_SECRET_ACCESS_KEY` | Secret access key |
-   | `STORAGE_BUCKET` | `planevidences` |
-   | `STORAGE_PUBLIC_URL` | `https://SEU-PROJETO.supabase.co/storage/v1/object/public/planevidences` |
-   | `ALLOWED_ORIGINS` | (deixe vazio por enquanto) |
-5. **Create Web Service**. Build leva ~5-8min na primeira vez (TeX Live).
-6. Teste: `https://SEU-BACKEND.onrender.com/api/health` → `{"status":"ok",...}`
+Mínimo pro gerador rodar: chave de IA em `backend/.env` (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY` ou `OPENAI_API_KEY`) **ou** o usuário configura no navegador via "Configurações de IA".
 
-### 3. Frontend no Vercel
+Pra Editor de Evidências completo: `STORAGE_*` (S3-compatível) + `DATABASE_URL` (Postgres).
 
-1. https://vercel.com → importa o repo
-2. Configurações:
-   - **Root Directory:** `frontend`
-   - **Framework Preset:** Vite (auto)
-3. **Environment Variables**: `VITE_API_URL` = URL do Render
-4. Deploy.
+Mudou `frontend/.env`? roda o build de novo:
 
-### 4. Fechar o CORS
+```powershell
+cd frontend; npm run build; cd ..
+```
 
-Render → seu serviço → **Environment** → `ALLOWED_ORIGINS` = URL do Vercel. Múltiplos domínios separados por vírgula.
+### 3. Testar manualmente
+
+```powershell
+cd backend
+npm start
+# [backend] listening on :4500
+```
+
+Acesse `http://localhost:4500` — frontend + API na mesma porta.
+Da intranet: `http://<ip-do-servidor>:4500`.
+
+### 4. Registrar como Windows Service (autostart)
+
+Pré-requisito: `winget install NSSM.NSSM` (ou baixar de https://nssm.cc/).
+
+```powershell
+# Como Administrator
+.\deploy\service-install.ps1
+```
+
+O script:
+
+- Cria o serviço `PlanEvidences` apontando pra `node backend/src/server.js`
+- Configura `AppDirectory`, restart automático, logs em `logs/stdout.log` e `logs/stderr.log` (rotacionados a 10MB)
+- Inicia o serviço
+
+Operações depois:
+
+```powershell
+nssm status PlanEvidences
+nssm restart PlanEvidences
+nssm stop PlanEvidences
+nssm start PlanEvidences
+
+# Remover totalmente
+.\deploy\service-install.ps1 -Uninstall
+```
+
+### 5. Atualizar versão
+
+```powershell
+cd C:\sig\PlanEvidences
+
+# Como Administrator (pra reiniciar o serviço)
+.\deploy\update.ps1 -RestartService
+
+# Sem admin: o script faz git pull + rebuild, e você reinicia depois com nssm
+.\deploy\update.ps1
+```
+
+### Porta ocupada / mudança de porta
+
+O default é **4500**. Pra mudar, edite `PORT=` em `backend/.env` e reinicie. Confirme com:
+
+```powershell
+Get-NetTCPConnection -LocalPort 4500
+```
+
+### HTTPS na intranet
+
+Sem domínio público, fica HTTP. Se quiser HTTPS depois:
+
+- Reverse proxy local (IIS / nginx) com cert auto-assinado ou Let's Encrypt
+- Cloudflare Tunnel ou Tailscale (sem precisar abrir porta)
 
 ---
 
-## Variáveis de ambiente
+## Schema do Supabase
 
-### Frontend
-| Variável | Default | Descrição |
-|---|---|---|
-| `VITE_API_URL` | vazio (dev usa proxy) | URL pública do backend |
+Crie no SQL Editor (mesmo schema do QA Assistant legado):
 
-### Backend
-| Variável | Obrigatório | Descrição |
-|---|---|---|
-| `DATABASE_URL` | sim | Connection string Postgres (Supabase/Neon) |
-| `STORAGE_ENDPOINT` | sim | Endpoint S3-compatible |
-| `STORAGE_REGION` | sim | Region (`us-east-1` para Supabase, `auto` para R2) |
-| `STORAGE_ACCESS_KEY_ID` | sim | Access key |
-| `STORAGE_SECRET_ACCESS_KEY` | sim | Secret access key |
-| `STORAGE_BUCKET` | sim | Nome do bucket |
-| `STORAGE_PUBLIC_URL` | sim | URL pública do bucket |
-| `ALLOWED_ORIGINS` | não | Origens permitidas no CORS (vírgula). Vazio = aberto. |
-| `PORT` | não | Default 3001 (Render seta automaticamente) |
+```sql
+create extension if not exists "pgcrypto";
+
+create table if not exists public.test_plans (
+  id uuid primary key default gen_random_uuid(),
+  projeto text not null,
+  sprint text not null,
+  tela text,
+  hu text not null,
+  hu_hash text not null,
+  tipo_sistema text,
+  criticidade text,
+  resultado_json jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint test_plans_unique_key unique (projeto, sprint, hu_hash)
+);
+
+create table if not exists public.test_case_executions (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid not null references public.test_plans(id) on delete cascade,
+  case_id text not null,
+  titulo text,
+  tipo text,
+  origem text,
+  status text not null default 'nao_executado'
+    check (status in ('nao_executado','passou','falhou')),
+  fail_count integer not null default 0,
+  updated_at timestamptz not null default now(),
+  constraint test_case_executions_unique unique (plan_id, case_id)
+);
+
+create table if not exists public.test_case_fail_history (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid not null references public.test_plans(id) on delete cascade,
+  case_id text not null,
+  observacao text,
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.touch_updated_at()
+returns trigger as $$
+begin new.updated_at = now(); return new; end;
+$$ language plpgsql;
+
+drop trigger if exists trg_test_plans_touch on public.test_plans;
+create trigger trg_test_plans_touch before update on public.test_plans
+  for each row execute function public.touch_updated_at();
+
+alter table public.test_plans enable row level security;
+alter table public.test_case_executions enable row level security;
+alter table public.test_case_fail_history enable row level security;
+create policy "anon all test_plans" on public.test_plans for all using (true) with check (true);
+create policy "anon all executions" on public.test_case_executions for all using (true) with check (true);
+create policy "anon all fail_history" on public.test_case_fail_history for all using (true) with check (true);
+```
+
+Storage: crie um bucket público chamado `planevidences` (Storage → New bucket → Public).
 
 ---
 
-## Como funciona o histórico
+## Endpoints
 
-- **Imagens** → Supabase Storage (`uploads/<sessionId>/<file>`)
-- **Documentos** (.tex e .pdf) → Supabase Storage (`documents/<id>/<basename>.{tex,pdf}`)
-- **Metadados** (id, cliente, sprint, versão, redator, URLs) → Supabase Postgres, tabela `documents`
+| Método | Rota | Função |
+|--------|------|--------|
+| GET | `/api/health` | Healthcheck |
+| GET | `/api/ai-analyze` | Status de IA configurada no servidor |
+| POST | `/api/ai-analyze` | Análise IA (recebe cards, devolve casos) |
+| POST | `/api/upload` | Upload de imagem (S3) |
+| POST | `/api/documents` | Compila LaTeX → PDF |
+| GET | `/api/documents` | Lista histórico de documentos gerados |
+| GET | `/*` (não-API) | SPA do React (frontend/dist) |
 
-A tabela é criada automaticamente no startup do backend (`ensureSchema`).
+---
 
-## Funcionalidades
+## Deploy alternativo: Vercel + Render (legado)
 
-- Upload com drag-and-drop, compressão automática (Sharp)
-- Cenários BDD com ID auto `CT-001`, `CT-002`...
-- Geração LaTeX + compilação PDF (latexmk/pdflatex)
-- Histórico persistente entre deploys
-- Tema dark/light
-- Auto-save no localStorage
-- Exportar/importar projeto JSON
-- Drag-and-drop para reordenar cenários
-- Painel lateral de navegação
+Mantido como alternativa caso queira separar frontend/backend:
+
+- **Frontend** → Vercel (build `npm run build`, output `dist/`)
+- **Backend** → Render via `render.yaml` + `backend/Dockerfile`
+- Configure `ALLOWED_ORIGINS` no backend e `VITE_API_URL` no frontend
+
+Detalhes nos arquivos `render.yaml` e `backend/Dockerfile`.
+
+---
+
+## Migração do QA Assistant legado
+
+O repositório `gerador-testes-hu` (QA Assistant standalone em HTML/JS vanilla) foi unificado neste projeto. Tudo o que ele fazia agora está em `/qa`:
+
+- Geração de casos a partir de HU (com IA)
+- Import JSON/PDF/DOCX (SIG)
+- Heurísticas de teste (20 categorias)
+- Cobertura e riscos
+- Status de execução (passou/falhou) + histórico de falhas
+- Save/retomar plano no Supabase
+- Exportar Markdown / JSON BDD / Template SIG
+
+Não há migração de dados — os dois sistemas usavam a mesma tabela `test_plans`. Planos antigos aparecem em "Retomar plano".
+
+---
+
+## Licença
+
+MIT (ou conforme licença do repositório).

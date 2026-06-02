@@ -2,21 +2,31 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-if (!process.env.DATABASE_URL) {
-  console.warn('[db] DATABASE_URL não definida — endpoints de histórico vão falhar.');
+const DATABASE_URL = process.env.DATABASE_URL;
+
+if (!DATABASE_URL) {
+  console.warn('[db] DATABASE_URL não definida — endpoints de histórico vão pular o banco (geração de PDF segue funcionando).');
 }
 
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
-});
+// Pool é null quando DATABASE_URL não está definida. Antes a gente construía o
+// Pool de qualquer jeito e o pg caía no fallback pra localhost com SSL, gerando
+// "The server does not support SSL connections" — erro confuso. Agora o caller
+// checa `pool` e pula DB graciosamente.
+export const pool = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+    })
+  : null;
 
-pool.on('error', (err) => {
-  console.error('[db] pool error:', err);
-});
+if (pool) {
+  pool.on('error', (err) => {
+    console.error('[db] pool error:', err);
+  });
+}
 
 export async function ensureSchema() {
-  if (!process.env.DATABASE_URL) return;
+  if (!pool) return;
   await pool.query(`
     CREATE TABLE IF NOT EXISTS documents (
       id TEXT PRIMARY KEY,

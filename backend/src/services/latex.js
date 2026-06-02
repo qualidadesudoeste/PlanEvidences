@@ -86,13 +86,31 @@ function joinSteps(steps) {
     .join('. ');
 }
 
+// Placeholders que a IA pode ter ecoado de prompts antigos. Quando aparecerem
+// em cardCodigo, devem ser tratados como ausência de código (vamos mostrar
+// só o resumo, sem "Card #...").
+const PLACEHOLDER_CODIGOS = new Set(['S/CODIGO', 'S/CÓDIGO', 'S/COD', 'S/N', 'N/A', 'NA', 'NULL', 'UNDEFINED', '?']);
+// Código sentinela da HU manual (sem número real de HU).
+const CODIGO_SEM_NUMERO_REAL = new Set(['HU-MANUAL']);
+
 // Decide o título exibido do card no PDF:
-//   - HU.* → mostra só o resumo (já carrega o identificador no nome).
+//   - Placeholder ruim / null → só resumo.
+//   - HU-MANUAL → só resumo (sentinela sem número real).
+//   - HU.04, HU 07... → "HU.04 - Resumo" (preserva o número da HU).
 //   - Numérico (cards SIG) → "Card #CODIGO — Resumo".
 function tituloCardParaLatex(codigo, resumo) {
-  if (!codigo) return resumo || '(sem identificação)';
-  if (/^HU/i.test(codigo)) return resumo || codigo;
-  return resumo ? `Card #${codigo} — ${resumo}` : `Card #${codigo}`;
+  const cod = codigo == null ? '' : String(codigo).trim();
+  const up = cod.toUpperCase();
+  if (!cod || PLACEHOLDER_CODIGOS.has(up)) {
+    return resumo || '(sem identificação)';
+  }
+  if (CODIGO_SEM_NUMERO_REAL.has(up)) {
+    return resumo || cod;
+  }
+  if (/^HU/i.test(cod)) {
+    return resumo ? `${cod} - ${resumo}` : cod;
+  }
+  return resumo ? `Card #${cod} — ${resumo}` : `Card #${cod}`;
 }
 
 // Agrupa scenarios pelo cardCodigo preservando a ordem original. Cenários sem

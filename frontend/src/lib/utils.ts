@@ -16,12 +16,38 @@ export interface CardGroup {
   startIndex: number;
 }
 
-// Formata o título do card: códigos HU.* (HU.04, HU-MANUAL) já carregam o
-// identificador no resumo, então mostra só o resumo. Códigos numéricos
-// (cards SIG) recebem o prefixo "Card #".
+// Placeholders ecoados pela IA em prompts antigos — tratar como ausência de código.
+const PLACEHOLDER_CODIGOS = new Set([
+  'S/CODIGO',
+  'S/CÓDIGO',
+  'S/COD',
+  'S/N',
+  'N/A',
+  'NA',
+  'NULL',
+  'UNDEFINED',
+  '?',
+]);
+
+// "HU-MANUAL" é o código sentinela usado quando o usuário digitou a HU direto sem
+// um identificador. Mostra só o resumo (nada de "HU-MANUAL - ..." no título).
+const CODIGO_SEM_NUMERO_REAL = new Set(['HU-MANUAL']);
+
+// Formata o título do card:
+//   - Placeholder ruim / null → só resumo
+//   - HU-MANUAL → só resumo (não tem número de HU real)
+//   - HU.04, HU.01, HU 07... → "HU.04 - Resumo"
+//   - Numérico (cards SIG) → "Card #CODIGO — Resumo"
 export function tituloCardParaExibicao(codigo?: string | null, resumo?: string | null): string {
-  if (!codigo) return resumo || '(sem identificação)';
-  if (/^HU/i.test(codigo)) return resumo || codigo;
+  if (!codigo || PLACEHOLDER_CODIGOS.has(codigo.trim().toUpperCase())) {
+    return resumo || '(sem identificação)';
+  }
+  if (CODIGO_SEM_NUMERO_REAL.has(codigo.trim().toUpperCase())) {
+    return resumo || codigo;
+  }
+  if (/^HU/i.test(codigo)) {
+    return resumo ? `${codigo} - ${resumo}` : codigo;
+  }
   return resumo ? `Card #${codigo} — ${resumo}` : `Card #${codigo}`;
 }
 

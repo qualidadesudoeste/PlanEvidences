@@ -12,9 +12,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/uploads': 'http://localhost:3001',
-      '/generated': 'http://localhost:3001',
+      '/api': 'http://localhost:4500',
+      '/uploads': 'http://localhost:4500',
+      '/generated': 'http://localhost:4500',
     },
   },
 });

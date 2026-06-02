@@ -12,9 +12,20 @@ async function commandExists(cmd) {
   });
 }
 
+// Com shell:true o cmd.exe re-parseia os args. Args com espaços (ex: nome
+// do arquivo .tex com a sprint) precisam ser quoted manualmente — senão o
+// pdflatex enxerga "Evidencias", "de", "Teste", ... como arquivos separados.
+function quoteForShell(arg) {
+  if (typeof arg !== 'string') return arg;
+  if (!/[ "&|<>^()]/.test(arg)) return arg;
+  return `"${arg.replace(/"/g, '""')}"`;
+}
+
 function runCmd(cmd, args, cwd) {
+  const useShell = process.platform === 'win32';
+  const finalArgs = useShell ? args.map(quoteForShell) : args;
   return new Promise((resolve) => {
-    const proc = spawn(cmd, args, { cwd, shell: process.platform === 'win32' });
+    const proc = spawn(cmd, finalArgs, { cwd, shell: useShell });
     let stdout = '';
     let stderr = '';
     proc.stdout.on('data', (d) => (stdout += d.toString()));

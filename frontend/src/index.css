@@ -427,7 +427,7 @@ label {
   font-weight: 500;
 }
 
-input,
+input:not([type='checkbox']):not([type='radio']):not([type='file']),
 textarea,
 select {
   width: 100%;
@@ -440,10 +440,17 @@ select {
   color: var(--text);
 }
 
-.dark input,
+.dark input:not([type='checkbox']):not([type='radio']):not([type='file']),
 .dark textarea,
 .dark select {
   background: var(--surface);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  cursor: pointer;
+  accent-color: var(--primary);
 }
 
 textarea {
@@ -456,7 +463,7 @@ textarea.mono {
   line-height: 1.6;
 }
 
-input:focus,
+input:not([type='checkbox']):not([type='radio']):not([type='file']):focus,
 textarea:focus,
 select:focus {
   border-color: var(--primary);
