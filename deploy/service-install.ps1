@@ -29,20 +29,28 @@ if (-not $isAdmin) {
     exit 1
 }
 
-# Verifica nssm
-$nssm = Get-Command nssm -ErrorAction SilentlyContinue
-if (-not $nssm) {
-    Write-Host '[ERRO] nssm não encontrado no PATH.' -ForegroundColor Red
-    Write-Host '       Instale com:  winget install NSSM.NSSM' -ForegroundColor Yellow
-    Write-Host '       Ou manual em:  https://nssm.cc/download' -ForegroundColor Yellow
-    exit 1
+# Resolve nssm: primeiro tenta o binário bundleado no repo (deploy\nssm.exe),
+# depois cai pro PATH (caso o operador prefira gerenciar via winget/chocolatey).
+$bundledNssm = Join-Path $PSScriptRoot 'nssm.exe'
+if (Test-Path $bundledNssm) {
+    $nssmExe = $bundledNssm
+    Write-Host "Usando nssm bundleado: $nssmExe" -ForegroundColor Gray
+} else {
+    $cmd = Get-Command nssm -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+        Write-Host '[ERRO] nssm não encontrado. Esperado em deploy\nssm.exe ou no PATH.' -ForegroundColor Red
+        Write-Host '       Faça git pull (o nssm.exe está commitado) OU baixe em https://nssm.cc/download' -ForegroundColor Yellow
+        exit 1
+    }
+    $nssmExe = $cmd.Source
+    Write-Host "Usando nssm do PATH: $nssmExe" -ForegroundColor Gray
 }
 
 # --- Uninstall ---
 if ($Uninstall) {
     Write-Host "Removendo serviço '$ServiceName'..." -ForegroundColor Cyan
-    & nssm stop $ServiceName 2>&1 | Out-Null
-    & nssm remove $ServiceName confirm 2>&1 | Out-Host
+    & $nssmExe stop $ServiceName 2>&1 | Out-Null
+    & $nssmExe remove $ServiceName confirm
     Write-Host "Serviço '$ServiceName' removido." -ForegroundColor Green
     exit 0
 }
@@ -71,28 +79,28 @@ $stderrLog = Join-Path $logsDir 'stderr.log'
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing) {
     Write-Host "Serviço '$ServiceName' já existe — reconfigurando..." -ForegroundColor Yellow
-    & nssm stop $ServiceName 2>&1 | Out-Null
+    & $nssmExe stop $ServiceName 2>&1 | Out-Null
 } else {
     Write-Host "Criando serviço '$ServiceName'..." -ForegroundColor Cyan
-    & nssm install $ServiceName $nodeExe $serverJs
+    & $nssmExe install $ServiceName $nodeExe '--env-file=.env' $serverJs
     if ($LASTEXITCODE -ne 0) { throw 'nssm install falhou' }
 }
 
 # Configura: working dir, restart automático, logs
-& nssm set $ServiceName AppDirectory (Join-Path $repoRoot 'backend') | Out-Null
-& nssm set $ServiceName DisplayName 'PlanEvidences (QA Suite)' | Out-Null
-& nssm set $ServiceName Description 'PlanEvidences — gerador de casos de teste + editor de evidências (porta 4500)' | Out-Null
-& nssm set $ServiceName Start SERVICE_AUTO_START | Out-Null
-& nssm set $ServiceName AppStdout $stdoutLog | Out-Null
-& nssm set $ServiceName AppStderr $stderrLog | Out-Null
-& nssm set $ServiceName AppRotateFiles 1 | Out-Null
-& nssm set $ServiceName AppRotateBytes 10485760 | Out-Null  # 10 MB por rotação
-& nssm set $ServiceName AppExit Default Restart | Out-Null
-& nssm set $ServiceName AppRestartDelay 2000 | Out-Null
+& $nssmExe set $ServiceName AppDirectory (Join-Path $repoRoot 'backend') | Out-Null
+& $nssmExe set $ServiceName DisplayName 'PlanEvidences (QA Suite)' | Out-Null
+& $nssmExe set $ServiceName Description 'PlanEvidences — gerador de casos de teste + editor de evidências (porta 4500)' | Out-Null
+& $nssmExe set $ServiceName Start SERVICE_AUTO_START | Out-Null
+& $nssmExe set $ServiceName AppStdout $stdoutLog | Out-Null
+& $nssmExe set $ServiceName AppStderr $stderrLog | Out-Null
+& $nssmExe set $ServiceName AppRotateFiles 1 | Out-Null
+& $nssmExe set $ServiceName AppRotateBytes 10485760 | Out-Null
+& $nssmExe set $ServiceName AppExit Default Restart | Out-Null
+& $nssmExe set $ServiceName AppRestartDelay 2000 | Out-Null
 
 # Inicia
 Write-Host "Iniciando serviço..." -ForegroundColor Cyan
-& nssm start $ServiceName 2>&1 | Out-Host
+& $nssmExe start $ServiceName
 
 Start-Sleep -Seconds 2
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
