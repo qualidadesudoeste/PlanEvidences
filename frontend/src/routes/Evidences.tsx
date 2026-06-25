@@ -652,7 +652,7 @@ export default function Evidences() {
       description: `O cenário "${scenario.title || 'Sem título'}" foi removido.`,
       action: (
         <Button
-          variant="outline"
+          variant="secondary"
           size="sm"
           onClick={() => undoDelete()}
           style={{
