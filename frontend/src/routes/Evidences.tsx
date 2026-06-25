@@ -169,7 +169,19 @@ export default function Evidences() {
   // → setProject → … Cobrimos tanto o load inicial quanto updates via Realtime.
   const isHydratingRef = useRef(false);
   // ID da row em evidence_projects (null = projeto local não salvo ainda).
-  const [evidenceId, setEvidenceId] = useState<string | null>(routeId || null);
+  const [evidenceId, setEvidenceId] = useState<string | null>(() => {
+    return routeId || localStorage.getItem('qa-evidences-project-id') || null;
+  });
+  const [draftId, setDraftId] = useState<string>(() => {
+    let id = localStorage.getItem('qa-evidences-draft-id');
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem('qa-evidences-draft-id', id);
+    }
+    return id;
+  });
+  const deletedScenariosRef = useRef<{ scenario: Scenario; index: number }[]>([]);
+
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const [loadingShared, setLoadingShared] = useState(false);
@@ -223,12 +235,53 @@ export default function Evidences() {
   const [searchQuery, setSearchQuery] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Sincroniza ID na URL e no localStorage
+  useEffect(() => {
+    if (evidenceId) {
+      localStorage.setItem('qa-evidences-project-id', evidenceId);
+      if (!routeId) {
+        navigate(`/evidences/${evidenceId}`, { replace: true });
+      }
+    } else {
+      localStorage.removeItem('qa-evidences-project-id');
+      if (routeId) {
+        navigate('/evidences', { replace: true });
+      }
+    }
+  }, [evidenceId, routeId, navigate]);
+
+  // Persistência automática do rascunho em edição
   useEffect(() => {
     const t = setTimeout(() => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+
+      // Atualiza a lista histórica de rascunhos locais/remotos em progresso
+      try {
+        const id = evidenceId || draftId;
+        const draftsJson = localStorage.getItem('qa-evidences-local-drafts');
+        let drafts: any[] = [];
+        if (draftsJson) {
+          drafts = JSON.parse(draftsJson);
+        }
+        drafts = drafts.filter((d) => d.id !== id);
+        drafts.unshift({
+          id,
+          projectName: project.projectName || 'Sem nome',
+          sprintName: project.sprintName || '',
+          updatedAt: new Date().toISOString(),
+          project,
+          evidenceId: evidenceId || null,
+        });
+        if (drafts.length > 20) {
+          drafts = drafts.slice(0, 20);
+        }
+        localStorage.setItem('qa-evidences-local-drafts', JSON.stringify(drafts));
+      } catch (e) {
+        console.error('[Evidences] Falha ao atualizar histórico de rascunhos:', e);
+      }
     }, 500);
     return () => clearTimeout(t);
-  }, [project]);
+  }, [project, evidenceId, draftId]);
 
   useEffect(() => {
     localStorage.setItem('qa-evidences-last-saved', JSON.stringify(lastSavedProject));
@@ -533,6 +586,46 @@ export default function Evidences() {
     }));
   }, []);
 
+  const undoDelete = useCallback(() => {
+    const lastDeleted = deletedScenariosRef.current.pop();
+    if (!lastDeleted) return;
+
+    setProject((p) => {
+      const arr = [...p.scenarios];
+      arr.splice(lastDeleted.index, 0, lastDeleted.scenario);
+      return { ...p, scenarios: arr };
+    });
+
+    toast({
+      variant: 'success',
+      title: 'Cenário restaurado',
+      description: `O cenário "${lastDeleted.scenario.title || 'Sem título'}" foi recuperado com sucesso.`,
+    });
+  }, [toast]);
+
+  // Listener para Ctrl+Z para desfazer remoção
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        const activeEl = document.activeElement;
+        if (
+          activeEl &&
+          (activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            activeEl.getAttribute('contenteditable') === 'true')
+        ) {
+          return;
+        }
+        if (deletedScenariosRef.current.length > 0) {
+          e.preventDefault();
+          undoDelete();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undoDelete]);
+
   const addScenario = () => {
     const s = newScenario();
     setProject((p) => ({ ...p, scenarios: [...p.scenarios, s] }));
@@ -542,8 +635,40 @@ export default function Evidences() {
   };
 
   const removeScenario = (id: string) => {
-    if (!confirm('Remover este cenário?')) return;
+    const idx = project.scenarios.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    const scenario = project.scenarios[idx];
+
+    // Salva na pilha de remoções
+    deletedScenariosRef.current.push({ scenario, index: idx });
+
+    // Remove do projeto
     setProject((p) => ({ ...p, scenarios: p.scenarios.filter((s) => s.id !== id) }));
+
+    // Mostra Toast com botão de Desfazer
+    toast({
+      variant: 'info',
+      title: 'Cenário removido',
+      description: `O cenário "${scenario.title || 'Sem título'}" foi removido.`,
+      action: (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => undoDelete()}
+          style={{
+            height: 28,
+            fontSize: 12,
+            padding: '0 10px',
+            backgroundColor: 'var(--card-bg, #ffffff)',
+            borderColor: 'var(--border, #e2e8f0)',
+            color: 'var(--text-primary, #0f172a)',
+            fontWeight: 600
+          }}
+        >
+          Desfazer
+        </Button>
+      )
+    });
   };
 
   const reorderScenario = (fromId: string, toId: string) => {
@@ -652,6 +777,12 @@ export default function Evidences() {
     if (!ok) return;
     setProject(emptyProject);
     setLastSavedProject(emptyProject);
+    setEvidenceId(null);
+    localStorage.removeItem('qa-evidences-project-id');
+    const newDraftId = crypto.randomUUID();
+    setDraftId(newDraftId);
+    localStorage.setItem('qa-evidences-draft-id', newDraftId);
+    navigate('/evidences', { replace: true });
     setLastDoc(null);
     toast({ variant: 'info', title: 'Projeto limpo' });
   };
@@ -672,6 +803,15 @@ export default function Evidences() {
     };
     setProject(newProj);
     setLastSavedProject(newProj);
+    
+    // Novo plano importado do QA vira um rascunho separado
+    setEvidenceId(null);
+    localStorage.removeItem('qa-evidences-project-id');
+    const newDraftId = crypto.randomUUID();
+    setDraftId(newDraftId);
+    localStorage.setItem('qa-evidences-draft-id', newDraftId);
+    navigate('/evidences', { replace: true });
+
     toast({
       variant: 'success',
       title: 'Plano importado do QA Assistant',
@@ -680,7 +820,7 @@ export default function Evidences() {
     return true;
   };
 
-  const handleOpenFromHistory = async (loaded: Project) => {
+  const handleOpenFromHistory = async (loaded: Project, id: string | null = null, draftIdParam: string | null = null) => {
     const ok = await checkUnsavedChanges('abrir este histórico');
     if (!ok) return;
 
@@ -688,6 +828,20 @@ export default function Evidences() {
     const newProj = { ...emptyProject, ...loaded, scenarios };
     setProject(newProj);
     setLastSavedProject(newProj);
+    
+    setEvidenceId(id);
+    if (id) {
+      localStorage.setItem('qa-evidences-project-id', id);
+      navigate(`/evidences/${id}`, { replace: true });
+    } else {
+      localStorage.removeItem('qa-evidences-project-id');
+      navigate('/evidences', { replace: true });
+    }
+
+    const targetDraftId = draftIdParam || id || crypto.randomUUID();
+    setDraftId(targetDraftId);
+    localStorage.setItem('qa-evidences-draft-id', targetDraftId);
+
     setLastDoc(null);
     setView('editor');
   };

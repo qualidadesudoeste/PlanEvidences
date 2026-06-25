@@ -35,6 +35,7 @@ export interface ToastItem {
   title: string;
   description?: string;
   variant?: Variant;
+  action?: React.ReactNode;
 }
 
 const variantClass: Record<Variant, string> = {
@@ -69,6 +70,11 @@ export function ToastRoot({ toast, onClose }: { toast: ToastItem; onClose: () =>
           </ToastPrimitive.Description>
         )}
       </div>
+      {toast.action && (
+        <div style={{ marginLeft: 12, display: 'flex', alignItems: 'center' }}>
+          {toast.action}
+        </div>
+      )}
       <ToastPrimitive.Close className="toast-close" aria-label="Fechar">
         <X size={16} />
       </ToastPrimitive.Close>
