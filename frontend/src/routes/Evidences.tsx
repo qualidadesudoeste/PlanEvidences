@@ -12,6 +12,7 @@ import {
   Share2,
   Check,
   CloudOff,
+  ArrowUp,
 } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
 import { ProjectForm } from '@/components/ProjectForm';
@@ -233,6 +234,7 @@ export default function Evidences() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [qaImportOpen, setQaImportOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sincroniza ID na URL e no localStorage
@@ -286,6 +288,18 @@ export default function Evidences() {
   useEffect(() => {
     localStorage.setItem('qa-evidences-last-saved', JSON.stringify(lastSavedProject));
   }, [lastSavedProject]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 300);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Recebe cenários do Gerador de Casos (rota /qa). O ref evita que HMR/re-render
   // dispare a importação duas vezes, e o navigate(replace) limpa o state pra o
@@ -629,6 +643,32 @@ export default function Evidences() {
   const addScenario = () => {
     const s = newScenario();
     setProject((p) => ({ ...p, scenarios: [...p.scenarios, s] }));
+    setTimeout(() => {
+      document.getElementById(`scenario-${s.id}`)?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
+
+  const addScenarioToCard = (
+    codigo: string | null,
+    resumo: string | null,
+    caminho: string | null,
+    lastScenarioId: string
+  ) => {
+    const s = {
+      ...newScenario(),
+      cardCodigo: codigo,
+      cardResumo: resumo,
+      cardCaminho: caminho,
+    };
+    setProject((p) => {
+      const idx = p.scenarios.findIndex((sc) => sc.id === lastScenarioId);
+      if (idx === -1) {
+        return { ...p, scenarios: [...p.scenarios, s] };
+      }
+      const newScenarios = [...p.scenarios];
+      newScenarios.splice(idx + 1, 0, s);
+      return { ...p, scenarios: newScenarios };
+    });
     setTimeout(() => {
       document.getElementById(`scenario-${s.id}`)?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
@@ -1108,16 +1148,39 @@ export default function Evidences() {
                             }}
                           >
                             {temCard && (
-                              <div className="card-group-header">
-                                <h3>{titulo}</h3>
-                                {g.caminho && (
-                                  <p className="card-group-path">
-                                    <strong>Caminho:</strong> {g.caminho}
-                                  </p>
-                                )}
-                                <span className="card-group-count">
-                                  {g.scenarios.length} cenário{g.scenarios.length !== 1 ? 's' : ''}
-                                </span>
+                              <div className="card-group-header" style={{
+                                display: 'flex',
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: 16
+                              }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
+                                  <h3>{titulo}</h3>
+                                  {g.caminho && (
+                                    <p className="card-group-path">
+                                      <strong>Caminho:</strong> {g.caminho}
+                                    </p>
+                                  )}
+                                  <span className="card-group-count">
+                                    {g.scenarios.length} cenário{g.scenarios.length !== 1 ? 's' : ''}
+                                  </span>
+                                </div>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => addScenarioToCard(g.codigo, g.resumo, g.caminho, groupScenarios[groupScenarios.length - 1].id)}
+                                  style={{
+                                    height: 32,
+                                    fontSize: 12,
+                                    gap: 4,
+                                    padding: '0 12px',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                  title="Adicionar caso de teste para este card/HU"
+                                >
+                                  <Plus size={14} /> Novo Cenário
+                                </Button>
                               </div>
                             )}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1172,6 +1235,14 @@ export default function Evidences() {
           </div>
         )}
       </main>
+
+      <button
+        onClick={scrollToTop}
+        className={`back-to-top ${showBackToTop ? 'visible' : ''}`}
+        title="Voltar ao topo"
+      >
+        <ArrowUp size={22} />
+      </button>
     </div>
   );
 }
