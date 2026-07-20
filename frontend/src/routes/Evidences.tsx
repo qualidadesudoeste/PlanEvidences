@@ -30,7 +30,7 @@ import {
   subscribeEvidenceProject,
   upsertEvidenceProject,
 } from '@/lib/evidenceProjects';
-import { agruparCenariosPorCard, tituloCardParaExibicao } from '@/lib/utils';
+import { agruparCenariosPorCard, tituloCardParaExibicao, getErrorMessage } from '@/lib/utils';
 import type { GeneratedDoc, Project, Scenario } from '@/types';
 
 const STORAGE_KEY = 'qa-evidences-project';
@@ -350,7 +350,7 @@ export default function Evidences() {
         toast({
           variant: 'error',
           title: 'Falha ao carregar projeto compartilhado',
-          description: err instanceof Error ? err.message : String(err),
+          description: getErrorMessage(err),
         });
       })
       .finally(() => {
@@ -387,7 +387,7 @@ export default function Evidences() {
       toast({
         variant: 'error',
         title: 'Falha ao salvar',
-        description: e instanceof Error ? e.message : String(e),
+        description: getErrorMessage(e),
       });
     } finally {
       setAutoSaving(false);
@@ -553,14 +553,14 @@ export default function Evidences() {
         toast({
           variant: 'warning',
           title: 'Salvo no Supabase, mas falhou no Histórico',
-          description: e instanceof Error ? e.message : 'Não foi possível compilar o documento para o histórico.',
+          description: getErrorMessage(e),
         });
         return true;
       } else {
         toast({
           variant: 'error',
           title: 'Erro ao salvar plano',
-          description: e instanceof Error ? e.message : 'Falha ao salvar no Supabase.',
+          description: getErrorMessage(e),
         });
         return false;
       }
@@ -767,7 +767,7 @@ export default function Evidences() {
       toast({
         variant: 'error',
         title: 'Erro ao gerar documento',
-        description: e instanceof Error ? e.message : 'Falha desconhecida',
+        description: getErrorMessage(e),
       });
     } finally {
       setGenerating(false);

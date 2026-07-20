@@ -4,6 +4,7 @@ import { Progress } from '@/components/ui/progress';
 import { uploadImages, deleteUpload, resolveAssetUrl } from '@/lib/api';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
+import { getErrorMessage } from '@/lib/utils';
 import type { UploadedImage } from '@/types';
 
 interface Props {
@@ -48,7 +49,7 @@ export function ImageUploader({ sessionId, images, onChange }: Props) {
         toast({
           variant: 'error',
           title: 'Falha no upload',
-          description: err instanceof Error ? err.message : 'Erro desconhecido',
+          description: getErrorMessage(err),
         });
       } finally {
         setUploading(false);

@@ -22,7 +22,7 @@ import {
 } from '@/lib/evidenceProjects';
 import { supabaseEnabled } from '@/lib/supabase';
 import { useToast } from '@/hooks/useToast';
-import { formatDate } from '@/lib/utils';
+import { formatBytes, formatDate, getErrorMessage } from '@/lib/utils';
 import type { GeneratedDoc, Project } from '@/types';
 
 interface HistoryListProps {
@@ -64,7 +64,7 @@ export function HistoryList({ onOpenProject }: HistoryListProps = {}) {
       toast({
         variant: 'error',
         title: 'Erro ao carregar histórico',
-        description: err instanceof Error ? err.message : 'Falha desconhecida',
+        description: getErrorMessage(err),
       });
     } finally {
       setLoadingDocs(false);
@@ -136,7 +136,7 @@ export function HistoryList({ onOpenProject }: HistoryListProps = {}) {
       toast({
         variant: 'error',
         title: 'Erro ao carregar rascunhos',
-        description: err instanceof Error ? err.message : 'Falha desconhecida',
+        description: getErrorMessage(err),
       });
     } finally {
       setLoadingEditing(false);
@@ -162,7 +162,7 @@ export function HistoryList({ onOpenProject }: HistoryListProps = {}) {
       toast({
         variant: 'error',
         title: 'Erro ao deletar documento',
-        description: err instanceof Error ? err.message : 'Falha desconhecida',
+        description: getErrorMessage(err),
       });
     }
   };
@@ -201,7 +201,7 @@ export function HistoryList({ onOpenProject }: HistoryListProps = {}) {
       toast({
         variant: 'error',
         title: 'Erro ao excluir rascunho',
-        description: err instanceof Error ? err.message : 'Falha desconhecida',
+        description: getErrorMessage(err),
       });
     }
   };
@@ -221,7 +221,7 @@ export function HistoryList({ onOpenProject }: HistoryListProps = {}) {
       toast({
         variant: 'error',
         title: 'Não foi possível abrir',
-        description: err instanceof Error ? err.message : 'Falha desconhecida',
+        description: getErrorMessage(err),
       });
     } finally {
       setOpeningDocId(null);
@@ -254,7 +254,7 @@ export function HistoryList({ onOpenProject }: HistoryListProps = {}) {
       toast({
         variant: 'error',
         title: 'Erro ao abrir rascunho',
-        description: err instanceof Error ? err.message : 'Falha desconhecida',
+        description: getErrorMessage(err),
       });
     } finally {
       setOpeningEditingId(null);

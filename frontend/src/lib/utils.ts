@@ -95,3 +95,26 @@ export function formatDate(iso: string) {
     return iso;
   }
 }
+
+export function getErrorMessage(err: unknown): string {
+  if (!err) return 'Erro desconhecido';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object') {
+    const obj = err as Record<string, any>;
+    if (typeof obj.message === 'string' && obj.message) {
+      const codeStr = obj.code ? ` (${obj.code})` : '';
+      const detailsStr = obj.details ? ` - ${obj.details}` : '';
+      return `${obj.message}${detailsStr}${codeStr}`;
+    }
+    if (typeof obj.error_description === 'string' && obj.error_description) return obj.error_description;
+    if (typeof obj.details === 'string' && obj.details) return obj.details;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return String(err);
+    }
+  }
+  return String(err);
+}
+

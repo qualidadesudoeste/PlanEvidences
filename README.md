@@ -201,6 +201,15 @@ create table if not exists public.test_case_fail_history (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.evidence_projects (
+  id uuid primary key default gen_random_uuid(),
+  project_name text not null,
+  sprint_name text,
+  project_json jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create or replace function public.touch_updated_at()
 returns trigger as $$
 begin new.updated_at = now(); return new; end;
@@ -210,12 +219,18 @@ drop trigger if exists trg_test_plans_touch on public.test_plans;
 create trigger trg_test_plans_touch before update on public.test_plans
   for each row execute function public.touch_updated_at();
 
+drop trigger if exists trg_evidence_projects_touch on public.evidence_projects;
+create trigger trg_evidence_projects_touch before update on public.evidence_projects
+  for each row execute function public.touch_updated_at();
+
 alter table public.test_plans enable row level security;
 alter table public.test_case_executions enable row level security;
 alter table public.test_case_fail_history enable row level security;
+alter table public.evidence_projects enable row level security;
 create policy "anon all test_plans" on public.test_plans for all using (true) with check (true);
 create policy "anon all executions" on public.test_case_executions for all using (true) with check (true);
 create policy "anon all fail_history" on public.test_case_fail_history for all using (true) with check (true);
+create policy "anon all evidence_projects" on public.evidence_projects for all using (true) with check (true);
 ```
 
 Storage: crie um bucket público chamado `planevidences` (Storage → New bucket → Public).

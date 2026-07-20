@@ -23,11 +23,22 @@ export interface UpsertResult {
   updated_at: string;
 }
 
+function handleSupabaseError(error: unknown): never {
+  if (error && typeof error === 'object') {
+    const errObj = error as Record<string, any>;
+    const msg = errObj.message || errObj.details || errObj.hint || 'Erro de banco de dados';
+    const code = errObj.code ? ` (${errObj.code})` : '';
+    const details = errObj.details ? ` - ${errObj.details}` : '';
+    throw new Error(`${msg}${details}${code}`);
+  }
+  throw error;
+}
+
 export async function loadEvidenceProject(id: string): Promise<EvidenceProjectRecord> {
   const supa = getSupabase();
   if (!supa) throw new Error('Supabase não configurado.');
   const { data, error } = await supa.from('evidence_projects').select('*').eq('id', id).single();
-  if (error) throw error;
+  if (error) handleSupabaseError(error);
   return data as EvidenceProjectRecord;
 }
 
@@ -39,7 +50,7 @@ export async function listEvidenceProjects(): Promise<EvidenceProjectListItem[]>
     .select('id, project_name, sprint_name, updated_at')
     .order('updated_at', { ascending: false })
     .limit(100);
-  if (error) throw error;
+  if (error) handleSupabaseError(error);
   return (data || []) as EvidenceProjectListItem[];
 }
 
@@ -52,39 +63,34 @@ export async function upsertEvidenceProject(opts: {
   project: Project;
 }): Promise<UpsertResult> {
   const supa = getSupabase();
-  if (!supa) throw new Error('Supabase não configurado.');
+  if (!supa) throw new Error('Supabase não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no frontend/.env.');
 
-  const payload = {
+  const payload: Record<string, any> = {
     project_name: opts.project.projectName || 'Sem nome',
     sprint_name: opts.project.sprintName || null,
     project_json: opts.project,
+    updated_at: new Date().toISOString(),
   };
 
   if (opts.id) {
-    const { data, error } = await supa
-      .from('evidence_projects')
-      .update(payload)
-      .eq('id', opts.id)
-      .select('id, updated_at')
-      .single();
-    if (error) throw error;
-    return data as UpsertResult;
-  } else {
-    const { data, error } = await supa
-      .from('evidence_projects')
-      .insert(payload)
-      .select('id, updated_at')
-      .single();
-    if (error) throw error;
-    return data as UpsertResult;
+    payload.id = opts.id;
   }
+
+  const { data, error } = await supa
+    .from('evidence_projects')
+    .upsert(payload)
+    .select('id, updated_at')
+    .single();
+
+  if (error) handleSupabaseError(error);
+  return data as UpsertResult;
 }
 
 export async function deleteEvidenceProject(id: string): Promise<void> {
   const supa = getSupabase();
   if (!supa) throw new Error('Supabase não configurado.');
   const { error } = await supa.from('evidence_projects').delete().eq('id', id);
-  if (error) throw error;
+  if (error) handleSupabaseError(error);
 }
 
 /**
