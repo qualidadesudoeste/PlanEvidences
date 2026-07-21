@@ -59,21 +59,32 @@ export async function generateCorrectiveCard(
 
 export function correctiveCardToMarkdown(
   card: CorrectiveCardDraft,
-  context: Pick<GenerateCorrectiveCardInput, 'hu' | 'screenPath'>
+  context: Pick<GenerateCorrectiveCardInput, 'screenPath' | 'screenUrl'>
 ): string {
   return [
-    `**HU:** ${context.hu.trim() || 'Não informada'}`,
+    `**Tela:** ${context.screenPath.trim() || 'Não informada'}`,
     '',
-    '**Caminho da Tela:**',
-    context.screenPath.trim() || 'Não informado',
+    '**URL:**',
+    context.screenUrl?.trim() || 'Não informada',
     '',
-    '**Descrição do Bug:**',
+    '**Descrição do Problema:**',
     '',
-    card.bugDescription.trim(),
+    card.problemDescription.trim(),
     '',
-    '**Comportamento esperado:**',
+    '**Passos para Reproduzir:**',
     '',
-    card.expectedBehavior.trim(),
+    ...card.reproductionSteps
+      .map((step) => step.trim())
+      .filter(Boolean)
+      .map((step, index) => `${index + 1}. ${step}`),
+    '',
+    '**Resultado Atual:**',
+    '',
+    card.currentResult.trim(),
+    '',
+    '**Resultado Esperado:**',
+    '',
+    card.expectedResult.trim(),
   ].join('\n');
 }
 

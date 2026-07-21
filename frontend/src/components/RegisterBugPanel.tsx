@@ -20,6 +20,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
   const { toast } = useToast();
   const [hu, setHu] = useState(context.hu);
   const [screenPath, setScreenPath] = useState(context.screenPath);
+  const [screenUrl, setScreenUrl] = useState(context.screenUrl || '');
   const [errorDescription, setErrorDescription] = useState('');
   const [card, setCard] = useState<CorrectiveCardDraft | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -49,6 +50,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
         ...context,
         hu: hu.trim(),
         screenPath: screenPath.trim(),
+        screenUrl: screenUrl.trim(),
         errorDescription: errorDescription.trim(),
       });
       setCard(generated);
@@ -135,6 +137,18 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                 />
               </div>
               <div className="form-group full">
+                <label htmlFor="bug-screen-url">URL da tela (opcional)</label>
+                <input
+                  id="bug-screen-url"
+                  type="url"
+                  value={screenUrl}
+                  onChange={(event) => setScreenUrl(event.target.value)}
+                  placeholder="Ex: https://sistema.exemplo.local/caminho-da-tela"
+                  disabled={generating}
+                />
+                <span className="label-hint">Cole a URL do sistema testado; a IA não inventará esse endereço.</span>
+              </div>
+              <div className="form-group full">
                 <label htmlFor="bug-description">Descrição do erro</label>
                 <textarea
                   id="bug-description"
@@ -176,26 +190,47 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="bug-card-description">Descrição do Bug</label>
+                <label htmlFor="bug-card-description">Descrição do Problema</label>
                 <textarea
                   id="bug-card-description"
-                  rows={4}
-                  value={card.bugDescription}
-                  onChange={(event) => setCard({ ...card, bugDescription: event.target.value })}
+                  rows={5}
+                  value={card.problemDescription}
+                  onChange={(event) => setCard({ ...card, problemDescription: event.target.value })}
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="bug-card-expected">Comportamento esperado</label>
+                <label htmlFor="bug-card-steps">Passos para Reproduzir</label>
+                <textarea
+                  id="bug-card-steps"
+                  rows={6}
+                  value={card.reproductionSteps.join('\n')}
+                  onChange={(event) =>
+                    setCard({ ...card, reproductionSteps: event.target.value.split(/\r?\n/) })
+                  }
+                />
+                <span className="label-hint">Um passo por linha; a numeração é aplicada ao copiar.</span>
+              </div>
+              <div className="form-group">
+                <label htmlFor="bug-card-current">Resultado Atual</label>
+                <textarea
+                  id="bug-card-current"
+                  rows={4}
+                  value={card.currentResult}
+                  onChange={(event) => setCard({ ...card, currentResult: event.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="bug-card-expected">Resultado Esperado</label>
                 <textarea
                   id="bug-card-expected"
                   rows={4}
-                  value={card.expectedBehavior}
-                  onChange={(event) => setCard({ ...card, expectedBehavior: event.target.value })}
+                  value={card.expectedResult}
+                  onChange={(event) => setCard({ ...card, expectedResult: event.target.value })}
                 />
               </div>
 
               <div className="corrective-preview-actions">
-                <Button onClick={() => copy(correctiveCardToMarkdown(card, { hu, screenPath }), 'Conteúdo')}>
+                <Button onClick={() => copy(correctiveCardToMarkdown(card, { screenPath, screenUrl }), 'Conteúdo')}>
                   <Clipboard size={16} /> Copiar Conteúdo
                 </Button>
                 <Button variant="secondary" onClick={() => copy(card.title, 'Título')}>

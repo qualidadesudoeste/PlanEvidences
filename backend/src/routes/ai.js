@@ -3,25 +3,34 @@ import { PROVIDERS, buildUserPrompt, extractJSON } from '../services/aiProviders
 
 const router = Router();
 
-const BUG_CARD_SYSTEM_PROMPT = `Você é um analista sênior de qualidade responsável por redigir cards de correção de defeitos para equipes de desenvolvimento.
+const BUG_CARD_SYSTEM_PROMPT = `Você é um analista sênior de QA responsável por redigir cards de corretiva completos, reproduzíveis e úteis para equipes de desenvolvimento.
 
-Transforme o relato do QA em um card técnico, claro, objetivo e sem ambiguidades. Corrija ortografia e concordância sem inventar fatos, mensagens, regras ou passos que não foram informados.
+Use o relato do QA junto com o cenário BDD e as evidências fornecidas para transformar uma anotação curta em uma documentação técnica clara. Corrija ortografia e concordância, explique a condição que provoca o defeito, o comportamento observado e seu impacto funcional. Não invente telas, campos, permissões, mensagens existentes, dados ou comportamentos que não possam ser inferidos com segurança do contexto.
 
 Retorne APENAS JSON válido, sem markdown ou texto adicional, exatamente com estas propriedades:
 {
-  "title": "[HU 199] - Sistema > Tela: resumo curto do problema",
-  "bugDescription": "descrição objetiva do comportamento atual observado",
-  "expectedBehavior": "descrição objetiva do comportamento esperado"
+  "title": "[HU 199] - Caminho da tela: resumo curto do problema",
+  "problemDescription": "dois ou mais períodos explicando a condição, o comportamento incorreto e a consequência observável",
+  "reproductionSteps": [
+    "Acessar a funcionalidade indicada",
+    "Preencher ou executar a condição descrita no cenário",
+    "Acionar a operação que revela o problema"
+  ],
+  "currentResult": "resultado que o sistema apresenta atualmente",
+  "expectedResult": "validação ou comportamento correto que o sistema deve apresentar"
 }
 
-Regras:
-- O título deve seguir: [HU XXX] - Caminho da Tela: Resumo do Problema.
+Regras obrigatórias:
+- O título segue: [HU XXX] - Caminho da Tela: Resumo do Problema.
 - No título, normalize HU.199 ou HU 199 para HU 199.
-- O resumo do título deve conter somente a essência do defeito.
-- bugDescription descreve somente o que ocorre atualmente.
-- expectedBehavior descreve o resultado correto esperado.
-- Se o relato não declarar explicitamente o comportamento esperado, deduza apenas o resultado funcional mínimo e óbvio, sem inventar detalhes de interface.
-- Não repita HU ou caminho dentro de bugDescription e expectedBehavior.`;
+- O resumo do título contém apenas a essência do defeito.
+- problemDescription deve ser substancial: explique o que o sistema permite ou faz, em qual condição e qual a consequência para o usuário ou para os dados. Evite apenas repetir o relato em uma frase.
+- reproductionSteps deve conter uma sequência ordenada de 3 a 8 ações curtas e executáveis. Aproveite os passos do cenário BDD recebido e adapte-os ao defeito.
+- Os passos terminam na ação que dispara o defeito; não coloque o resultado atual ou esperado como um passo.
+- currentResult descreve objetivamente o comportamento observado depois da última ação.
+- expectedResult descreve a regra correta e, quando fizer sentido, a validação que deve bloquear a operação. Uma sugestão de mensagem pode ser incluída como exemplo, nunca como mensagem já existente.
+- Não inclua HU, caminho ou URL dentro dos quatro campos textuais; eles são exibidos separadamente no card.
+- Não use frases genéricas como "corrigir o problema" ou "funcionar corretamente".`;
 
 function configuredAI(body = {}) {
   const chosenProvider = body.provider || 'gemini';
@@ -51,6 +60,15 @@ function standardizedBugTitle(aiTitle, hu, screenPath) {
   return `[${titleHu(hu)}] - ${String(screenPath || '').trim() || 'Caminho não informado'}: ${
     summary || 'Defeito identificado durante a execução do teste'
   }`;
+}
+
+function normalizeReproductionSteps(value) {
+  const items = Array.isArray(value)
+    ? value
+    : String(value || '').split(/\r?\n/);
+  return items
+    .map((item) => String(item).replace(/^\s*(?:\d+[.)]|[-*])\s*/, '').trim())
+    .filter(Boolean);
 }
 
 // GET /api/ai-analyze — informa quais provedores têm key no .env do servidor
@@ -84,6 +102,9 @@ router.post('/bug-card', async (req, res) => {
       sigCardCode,
       scenarioCode,
       scenarioTitle,
+      scenarioBdd,
+      evidenceDescription,
+      screenUrl,
       provider,
       model,
       apiKey,
@@ -103,9 +124,12 @@ router.post('/bug-card', async (req, res) => {
     const userPrompt = [
       `HU: ${String(hu || 'Não informada').trim()}`,
       `Caminho da tela: ${String(screenPath || 'Não informado').trim()}`,
+      screenUrl ? `URL informada pelo QA: ${String(screenUrl).trim()}` : null,
       sigCardCode ? `Card de melhoria SIG de origem: #${String(sigCardCode).trim()}` : null,
       scenarioCode ? `Código do cenário: ${String(scenarioCode).trim()}` : null,
       scenarioTitle ? `Cenário em execução: ${String(scenarioTitle).trim()}` : null,
+      scenarioBdd ? `Cenário BDD:\n${String(scenarioBdd).trim()}` : null,
+      evidenceDescription ? `Evidência já registrada:\n${String(evidenceDescription).trim()}` : null,
       `Relato do QA: ${String(errorDescription).trim()}`,
     ].filter(Boolean).join('\n');
 
@@ -116,7 +140,14 @@ router.post('/bug-card', async (req, res) => {
       userPrompt,
     });
     const card = extractJSON(result.texto);
-    if (!card?.title || !card?.bugDescription || !card?.expectedBehavior) {
+    const reproductionSteps = normalizeReproductionSteps(card?.reproductionSteps);
+    if (
+      !card?.title ||
+      !card?.problemDescription ||
+      reproductionSteps.length === 0 ||
+      !card?.currentResult ||
+      !card?.expectedResult
+    ) {
       throw new Error('A IA retornou um card incompleto. Tente gerar novamente.');
     }
 
@@ -129,8 +160,11 @@ router.post('/bug-card', async (req, res) => {
         title: standardizedBugTitle(card.title, hu, screenPath),
         hu: String(hu || '').trim(),
         screenPath: String(screenPath || '').trim(),
-        bugDescription: String(card.bugDescription).trim(),
-        expectedBehavior: String(card.expectedBehavior).trim(),
+        screenUrl: String(screenUrl || '').trim(),
+        problemDescription: String(card.problemDescription).trim(),
+        reproductionSteps,
+        currentResult: String(card.currentResult).trim(),
+        expectedResult: String(card.expectedResult).trim(),
       },
     });
   } catch (err) {

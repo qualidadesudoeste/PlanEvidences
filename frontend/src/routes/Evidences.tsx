@@ -111,6 +111,14 @@ function extractHuFromCard(...values: Array<string | null | undefined>): string 
   return '';
 }
 
+function extractUrlFromScenario(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    const match = String(value || '').match(/https?:\/\/[^\s<>()]+/i);
+    if (match) return match[0].replace(/[.,;]+$/, '');
+  }
+  return '';
+}
+
 // Badge no header mostrando estado de sincronização com Supabase.
 // 4 estados: Salvando | Não-sincronizado (dirty) | Sincronizado | Apenas-local (sem id ainda).
 function SyncStatus({
@@ -264,12 +272,15 @@ export default function Evidences() {
     return {
       hu: extractHuFromCard(bugScenario?.cardResumo, bugScenario?.cardCaminho),
       screenPath: bugScenario?.cardCaminho || '',
+      screenUrl: extractUrlFromScenario(bugScenario?.evidence, bugScenario?.bdd),
       sigCardCode: bugScenario?.cardCodigo || null,
       evidenceProjectId: evidenceId,
       qaPlanId: project.qaPlanId,
       scenarioId: bugScenario?.id || null,
       scenarioCode: index >= 0 ? scenarioCode(index) : null,
       scenarioTitle: bugScenario?.title || null,
+      scenarioBdd: bugScenario?.bdd || null,
+      evidenceDescription: bugScenario?.evidence || null,
       caseId: bugScenario?.caseId || null,
       evidenceImageKeys: bugScenario?.images.map((image) => image.key).filter(Boolean) || [],
     };

@@ -56,20 +56,25 @@ export interface GeneratedDoc {
 export interface CorrectiveCardContext {
   hu: string;
   screenPath: string;
+  screenUrl?: string;
   sigCardCode?: string | null;
   evidenceProjectId?: string | null;
   qaPlanId?: string | null;
   scenarioId?: string | null;
   scenarioCode?: string | null;
   scenarioTitle?: string | null;
+  scenarioBdd?: string | null;
+  evidenceDescription?: string | null;
   caseId?: string | null;
   evidenceImageKeys?: string[];
 }
 
 export interface CorrectiveCardDraft {
   title: string;
-  bugDescription: string;
-  expectedBehavior: string;
+  problemDescription: string;
+  reproductionSteps: string[];
+  currentResult: string;
+  expectedResult: string;
 }
 
 export interface GenerateCorrectiveCardInput extends CorrectiveCardContext {
