@@ -14,12 +14,13 @@ import {
   CloudOff,
   ArrowUp,
 } from 'lucide-react';
-import { Sidebar } from '@/components/Sidebar';
+import { Sidebar, type EvidenceView } from '@/components/Sidebar';
 import { ProjectForm } from '@/components/ProjectForm';
 import { ScenarioCard } from '@/components/ScenarioCard';
 import { HistoryList } from '@/components/HistoryList';
 import { RightPanel } from '@/components/RightPanel';
 import { ImportFromQAModal } from '@/components/ImportFromQAModal';
+import { RegisterBugModal } from '@/components/RegisterBugPanel';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/useToast';
@@ -31,7 +32,13 @@ import {
   upsertEvidenceProject,
 } from '@/lib/evidenceProjects';
 import { agruparCenariosPorCard, tituloCardParaExibicao, getErrorMessage } from '@/lib/utils';
-import type { GeneratedDoc, Project, Scenario } from '@/types';
+import {
+  scenarioCode,
+  type CorrectiveCardContext,
+  type GeneratedDoc,
+  type Project,
+  type Scenario,
+} from '@/types';
 
 const STORAGE_KEY = 'qa-evidences-project';
 const SESSION_KEY = 'qa-evidences-session';
@@ -94,6 +101,14 @@ interface IncomingFromQA {
   fromQA: true;
   scenarios: Scenario[];
   meta: { projeto: string; sprint: string };
+}
+
+function extractHuFromCard(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    const match = String(value || '').match(/\bHU\s*[.:-]?\s*(\d+)\b/i);
+    if (match) return `HU.${match[1]}`;
+  }
+  return '';
 }
 
 // Badge no header mostrando estado de sincronização com Supabase.
@@ -226,7 +241,8 @@ export default function Evidences() {
     return emptyProject;
   });
 
-  const [view, setView] = useState<'editor' | 'history'>('editor');
+  const [view, setView] = useState<EvidenceView>('editor');
+  const [bugScenarioId, setBugScenarioId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -236,6 +252,28 @@ export default function Evidences() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showBackToTop, setShowBackToTop] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const bugScenario = useMemo(() => {
+    return project.scenarios.find((scenario) => scenario.id === bugScenarioId) || null;
+  }, [project.scenarios, bugScenarioId]);
+
+  const bugContext = useMemo<CorrectiveCardContext>(() => {
+    const index = bugScenario
+      ? project.scenarios.findIndex((scenario) => scenario.id === bugScenario.id)
+      : -1;
+    return {
+      hu: extractHuFromCard(bugScenario?.cardResumo, bugScenario?.cardCaminho),
+      screenPath: bugScenario?.cardCaminho || '',
+      sigCardCode: bugScenario?.cardCodigo || null,
+      evidenceProjectId: evidenceId,
+      qaPlanId: project.qaPlanId,
+      scenarioId: bugScenario?.id || null,
+      scenarioCode: index >= 0 ? scenarioCode(index) : null,
+      scenarioTitle: bugScenario?.title || null,
+      caseId: bugScenario?.caseId || null,
+      evidenceImageKeys: bugScenario?.images.map((image) => image.key).filter(Boolean) || [],
+    };
+  }, [bugScenario, evidenceId, project.qaPlanId, project.scenarios]);
 
   // Sincroniza ID na URL e no localStorage
   useEffect(() => {
@@ -906,6 +944,15 @@ export default function Evidences() {
         onImport={handleImportFromQA}
       />
 
+      {bugScenario && (
+        <RegisterBugModal
+          key={bugScenario.id}
+          open
+          context={bugContext}
+          onClose={() => setBugScenarioId(null)}
+        />
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
@@ -1208,6 +1255,9 @@ export default function Evidences() {
                                         setDraggingId(null);
                                       }}
                                       isDragging={draggingId === s.id}
+                                      onRegisterBug={() => {
+                                        setBugScenarioId(s.id);
+                                      }}
                                     />
                                   </div>
                                 );

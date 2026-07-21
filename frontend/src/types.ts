@@ -51,6 +51,36 @@ export interface GeneratedDoc {
   hasProject?: boolean;
 }
 
+// Contratos da corretiva ficam independentes da UI e já carregam os vínculos
+// necessários para uma futura publicação direta no SIG.
+export interface CorrectiveCardContext {
+  hu: string;
+  screenPath: string;
+  sigCardCode?: string | null;
+  evidenceProjectId?: string | null;
+  qaPlanId?: string | null;
+  scenarioId?: string | null;
+  scenarioCode?: string | null;
+  scenarioTitle?: string | null;
+  caseId?: string | null;
+  evidenceImageKeys?: string[];
+}
+
+export interface CorrectiveCardDraft {
+  title: string;
+  bugDescription: string;
+  expectedBehavior: string;
+}
+
+export interface GenerateCorrectiveCardInput extends CorrectiveCardContext {
+  errorDescription: string;
+}
+
+/** Porta preparada para uma futura implementação de cadastro direto no SIG. */
+export interface CorrectiveCardPublisher {
+  publish(card: CorrectiveCardDraft, context: CorrectiveCardContext): Promise<{ externalId: string }>;
+}
+
 export function scenarioCode(index: number): string {
   return `CT-${String(index + 1).padStart(3, '0')}`;
 }

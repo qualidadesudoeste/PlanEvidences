@@ -244,6 +244,7 @@ Storage: crie um bucket público chamado `planevidences` (Storage → New bucket
 | GET | `/api/health` | Healthcheck |
 | GET | `/api/ai-analyze` | Status de IA configurada no servidor |
 | POST | `/api/ai-analyze` | Análise IA (recebe cards, devolve casos) |
+| POST | `/api/ai-analyze/bug-card` | Gera card padronizado de corretiva a partir do relato do QA |
 | POST | `/api/upload` | Upload de imagem (S3) |
 | POST | `/api/documents` | Compila LaTeX → PDF |
 | GET | `/api/documents` | Lista histórico de documentos gerados |

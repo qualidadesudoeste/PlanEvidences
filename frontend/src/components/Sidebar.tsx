@@ -3,10 +3,12 @@ import { NavLink } from 'react-router-dom';
 import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/utils';
 
+export type EvidenceView = 'editor' | 'history';
+
 interface Props {
   // Evidences-specific (omitir quando o Sidebar é renderizado em outras rotas)
-  view?: 'editor' | 'history';
-  onChangeView?: (v: 'editor' | 'history') => void;
+  view?: EvidenceView;
+  onChangeView?: (v: EvidenceView) => void;
   onExport?: () => void;
   onImport?: () => void;
   onImportFromQA?: () => void;
@@ -103,6 +105,7 @@ export function Sidebar({
                 </span>
                 Histórico
               </button>
+
             </>
           )}
 

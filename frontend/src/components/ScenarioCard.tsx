@@ -1,4 +1,4 @@
-import { Trash2, GripVertical, ChevronDown, ChevronRight } from 'lucide-react';
+import { Bug, Trash2, GripVertical, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { ImageUploader } from '@/components/ImageUploader';
 import { type Scenario, type UploadedImage, scenarioCode } from '@/types';
@@ -14,6 +14,7 @@ interface Props {
   onDragOver: (e: React.DragEvent) => void;
   onDrop: () => void;
   isDragging: boolean;
+  onRegisterBug?: () => void;
 }
 
 const BDD_PLACEHOLDER = `Dado que o usuário está na tela de login
@@ -31,6 +32,7 @@ export function ScenarioCard({
   onDragOver,
   onDrop,
   isDragging,
+  onRegisterBug,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
 
@@ -68,6 +70,21 @@ export function ScenarioCard({
         </span>
         {scenario.images.length > 0 && (
           <span className="scenario-img-count">{scenario.images.length} img</span>
+        )}
+        {onRegisterBug && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm scenario-corrective-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRegisterBug();
+            }}
+            title="Criar uma corretiva a partir deste cenário"
+            aria-label={`Criar corretiva para ${ctId}`}
+          >
+            <Bug size={16} />
+            <span>Criar corretiva</span>
+          </button>
         )}
         <button
           type="button"

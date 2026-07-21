@@ -678,6 +678,102 @@ select:focus {
   flex-shrink: 0;
 }
 
+/* CORRETIVA CONTEXTUAL — aberta a partir de um cenário do card SIG */
+.scenario-corrective-button {
+  height: 34px;
+  padding: 0 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.corrective-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.64);
+  backdrop-filter: blur(3px);
+}
+
+.corrective-modal {
+  width: min(960px, 100%);
+  max-height: 92vh;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.corrective-modal-header {
+  padding: 18px 22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(30, 158, 34, 0.1), rgba(118, 231, 107, 0.03));
+}
+
+.corrective-modal-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 21px;
+  font-weight: 750;
+}
+
+.corrective-modal-header p,
+.corrective-preview-heading p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.corrective-modal-body {
+  padding: 22px;
+  overflow-y: auto;
+}
+
+.corrective-modal-intro {
+  margin-bottom: 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.corrective-modal-primary-action,
+.corrective-preview-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.corrective-preview {
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.corrective-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.corrective-preview-heading h3 {
+  font-size: 19px;
+  font-weight: 700;
+}
+
 .side-panel {
   background: var(--surface);
   border-radius: var(--radius-lg);
@@ -1143,6 +1239,14 @@ select:focus {
   .header-actions { width: 100%; }
   .header-actions .btn { flex: 1; }
   .image-grid { justify-content: center; }
+}
+
+@media (max-width: 680px) {
+  .scenario-corrective-button span { display: none; }
+  .corrective-modal-overlay { padding: 0; align-items: stretch; }
+  .corrective-modal { width: 100%; max-height: 100vh; border-radius: 0; }
+  .corrective-modal-body { padding: 18px; }
+  .corrective-preview-actions .btn { flex: 1; }
 }
 
 /* BACK TO TOP BUTTON */

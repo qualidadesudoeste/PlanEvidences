@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # PlanEvidences — atualiza no Smart Sig Runner (git pull + rebuild + restart)
 # =============================================================================
 # Idempotente. Roda como Administrator se for usar -RestartService.
@@ -73,13 +73,18 @@ try {
             )
         if (-not $isAdmin) {
             Write-Host '[AVISO] Para reiniciar o serviço rode como Administrator. Reinicie manualmente:' -ForegroundColor Yellow
-            Write-Host "  nssm restart $ServiceName" -ForegroundColor Gray
+            Write-Host "  .\deploy\nssm.exe restart $ServiceName" -ForegroundColor Gray
         } else {
             $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
             if (-not $svc) {
                 Write-Host "[AVISO] Serviço '$ServiceName' não está instalado. Use service-install.ps1." -ForegroundColor Yellow
             } else {
-                nssm restart $ServiceName
+                $bundledNssm = Join-Path $PSScriptRoot 'nssm.exe'
+                $nssmExe = if (Test-Path $bundledNssm) { $bundledNssm } else {
+                    $cmd = Get-Command nssm -ErrorAction SilentlyContinue
+                    if ($cmd) { $cmd.Source } else { 'nssm' }
+                }
+                & $nssmExe restart $ServiceName
                 Start-Sleep -Seconds 2
                 $svc = Get-Service -Name $ServiceName
                 if ($svc.Status -eq 'Running') {
@@ -90,7 +95,7 @@ try {
             }
         }
     } else {
-        Write-Host "`nLembrete: se rodou como serviço, reinicie com 'nssm restart $ServiceName' ou rode de novo com -RestartService." -ForegroundColor Yellow
+        Write-Host "`nLembrete: se rodou como serviço, reinicie com '.\deploy\nssm.exe restart $ServiceName' ou rode de novo com -RestartService." -ForegroundColor Yellow
     }
 
     Write-Section 'Update concluído'

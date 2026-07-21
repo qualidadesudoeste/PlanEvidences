@@ -125,7 +125,7 @@ async function fetchWithRetry(url, options, providerName) {
   throw lastError;
 }
 
-async function callAnthropic({ apiKey, model, userPrompt }) {
+async function callAnthropic({ apiKey, model, userPrompt, systemPrompt = SYSTEM_PROMPT }) {
   const response = await fetchWithRetry(
     'https://api.anthropic.com/v1/messages',
     {
@@ -138,7 +138,7 @@ async function callAnthropic({ apiKey, model, userPrompt }) {
       body: JSON.stringify({
         model: model || 'claude-sonnet-4-6',
         max_tokens: 8192,
-        system: [{ type: 'text', text: SYSTEM_PROMPT }],
+        system: [{ type: 'text', text: systemPrompt }],
         messages: [{ role: 'user', content: userPrompt }],
       }),
     },
@@ -148,7 +148,7 @@ async function callAnthropic({ apiKey, model, userPrompt }) {
   return { texto: data.content?.[0]?.text || '', usage: data.usage };
 }
 
-async function callOpenAI({ apiKey, model, userPrompt }) {
+async function callOpenAI({ apiKey, model, userPrompt, systemPrompt = SYSTEM_PROMPT }) {
   const response = await fetchWithRetry(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -161,7 +161,7 @@ async function callOpenAI({ apiKey, model, userPrompt }) {
         model: model || 'gpt-4o-mini',
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.4,
@@ -173,7 +173,7 @@ async function callOpenAI({ apiKey, model, userPrompt }) {
   return { texto: data.choices?.[0]?.message?.content || '', usage: data.usage };
 }
 
-async function callGeminiOnce(apiKey, modelName, userPrompt) {
+async function callGeminiOnce(apiKey, modelName, userPrompt, systemPrompt = SYSTEM_PROMPT) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
   const generationConfig = {
@@ -194,7 +194,7 @@ async function callGeminiOnce(apiKey, modelName, userPrompt) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
         generationConfig,
       }),
@@ -231,7 +231,7 @@ async function callGeminiOnce(apiKey, modelName, userPrompt) {
   };
 }
 
-async function callGemini({ apiKey, model, userPrompt }) {
+async function callGemini({ apiKey, model, userPrompt, systemPrompt = SYSTEM_PROMPT }) {
   if (!apiKey.startsWith('AIza')) {
     const err = new Error(
       'API key do Gemini inválida: deve começar com "AIza". Gere uma key em https://aistudio.google.com/apikey (não use access token OAuth).'
@@ -250,7 +250,7 @@ async function callGemini({ apiKey, model, userPrompt }) {
   for (let i = 0; i < fallbackChain.length; i++) {
     const modelName = fallbackChain[i];
     try {
-      return await callGeminiOnce(apiKey, modelName, userPrompt);
+      return await callGeminiOnce(apiKey, modelName, userPrompt, systemPrompt);
     } catch (err) {
       lastError = err;
       const isOverloaded = err.status === 503 || err.status === 429;
