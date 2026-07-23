@@ -119,18 +119,43 @@ function extractUrlFromScenario(...values: Array<string | null | undefined>): st
   return '';
 }
 
+function isConnectionUnavailable(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  return [
+    'failed to fetch',
+    'fetch failed',
+    'networkerror',
+    'network error',
+    'network request failed',
+    'load failed',
+    'err_network',
+    'connection refused',
+    'connection reset',
+    'timed out',
+    'timeout',
+  ].some((term) => message.includes(term));
+}
+
+type EvidenceSaveResult =
+  | { status: 'synced'; id: string }
+  | { status: 'local' }
+  | { status: 'failed' }
+  | { status: 'skipped' };
+
 // Badge no header mostrando estado de sincronização com Supabase.
-// 4 estados: Salvando | Não-sincronizado (dirty) | Sincronizado | Apenas-local (sem id ainda).
+// Estados: Salvando | Salvo localmente | Não-sincronizado | Sincronizado | Apenas-local (sem id ainda).
 function SyncStatus({
   autoSaving,
   isDirty,
   lastSyncAt,
   evidenceId,
+  syncUnavailable,
 }: {
   autoSaving: boolean;
   isDirty: boolean;
   lastSyncAt: Date | null;
   evidenceId: string | null;
+  syncUnavailable: boolean;
 }) {
   let icon: JSX.Element;
   let label: string;
@@ -140,6 +165,10 @@ function SyncStatus({
     icon = <Loader2 size={12} className="spin" />;
     label = 'Salvando...';
     color = 'var(--text-secondary)';
+  } else if (syncUnavailable) {
+    icon = <CloudOff size={12} />;
+    label = 'Salvo apenas localmente';
+    color = 'var(--warning, #d97706)';
   } else if (!evidenceId) {
     icon = <CloudOff size={12} />;
     label = 'Apenas local';
@@ -170,7 +199,9 @@ function SyncStatus({
         whiteSpace: 'nowrap',
       }}
       title={
-        evidenceId
+        syncUnavailable
+          ? 'As alterações estão salvas neste navegador. Clique em "Salvar" para tentar sincronizar novamente.'
+          : evidenceId
           ? 'Auto-save no Supabase a cada 3s. Outros QAs com a mesma URL veem suas mudanças em tempo real.'
           : 'Projeto ainda não foi salvo no Supabase. Clique em "Salvar e compartilhar" pra gerar uma URL.'
       }
@@ -207,10 +238,12 @@ export default function Evidences() {
   const deletedScenariosRef = useRef<{ scenario: Scenario; index: number }[]>([]);
 
   const [autoSaving, setAutoSaving] = useState(false);
+  const [syncUnavailable, setSyncUnavailable] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const [loadingShared, setLoadingShared] = useState(false);
   // Salva-as-server-version: usado pra ignorar eventos Realtime do nosso próprio save.
   const lastSavedAtRef = useRef<string | null>(null);
+  const syncWarningShownRef = useRef(false);
   const [project, setProject] = useState<Project>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -388,6 +421,8 @@ export default function Evidences() {
         setLastSavedProject(restored);
         setEvidenceId(record.id);
         setLastSyncAt(new Date(record.updated_at));
+        setSyncUnavailable(false);
+        syncWarningShownRef.current = false;
         lastSavedAtRef.current = record.updated_at;
         toast({
           variant: 'info',
@@ -396,10 +431,16 @@ export default function Evidences() {
         });
       })
       .catch((err) => {
+        const connectionUnavailable = isConnectionUnavailable(err);
+        if (connectionUnavailable) setSyncUnavailable(true);
         toast({
-          variant: 'error',
-          title: 'Falha ao carregar projeto compartilhado',
-          description: getErrorMessage(err),
+          variant: connectionUnavailable ? 'warning' : 'error',
+          title: connectionUnavailable
+            ? 'Servidor externo indisponível'
+            : 'Não foi possível carregar o projeto compartilhado',
+          description: connectionUnavailable
+            ? 'A VPN bloqueou o acesso ao servidor de sincronização. O conteúdo salvo neste navegador foi mantido.'
+            : 'O projeto compartilhado não pôde ser carregado. Tente novamente em alguns instantes.',
         });
       })
       .finally(() => {
@@ -419,38 +460,74 @@ export default function Evidences() {
   // Auto-save no Supabase com debounce de 3s. Cria a row na primeira gravação
   // (updateia a URL pra /evidences/:id) ou atualiza a existente.
   // Pula quando estamos hidratando do servidor (load inicial ou Realtime update).
-  const handleAutoSave = useCallback(async () => {
-    if (isHydratingRef.current) return;
-    setAutoSaving(true);
-    try {
-      const result = await upsertEvidenceProject({ id: evidenceId, project });
-      lastSavedAtRef.current = result.updated_at;
-      setLastSyncAt(new Date(result.updated_at));
-      setLastSavedProject(project);
-      if (!evidenceId) {
-        // Primeira gravação: muda URL pra refletir o id (sem reload)
-        setEvidenceId(result.id);
-        navigate(`/evidences/${result.id}`, { replace: true });
+  const handleAutoSave = useCallback(
+    async (notifyFailure = true): Promise<EvidenceSaveResult> => {
+      if (isHydratingRef.current) return { status: 'skipped' };
+
+      let savedLocally = true;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+      } catch (localError) {
+        savedLocally = false;
+        console.error('[Evidences] Falha ao salvar o projeto localmente:', localError);
       }
-    } catch (e) {
-      toast({
-        variant: 'error',
-        title: 'Falha ao salvar',
-        description: getErrorMessage(e),
-      });
-    } finally {
-      setAutoSaving(false);
-    }
-  }, [evidenceId, project, navigate, toast]);
+
+      setAutoSaving(true);
+      try {
+        const result = await upsertEvidenceProject({ id: evidenceId, project });
+        lastSavedAtRef.current = result.updated_at;
+        setLastSyncAt(new Date(result.updated_at));
+        setLastSavedProject(project);
+        setSyncUnavailable(false);
+        syncWarningShownRef.current = false;
+        if (!evidenceId) {
+          // Primeira gravação: muda URL pra refletir o id (sem reload)
+          setEvidenceId(result.id);
+          navigate(`/evidences/${result.id}`, { replace: true });
+        }
+        return { status: 'synced', id: result.id };
+      } catch (error) {
+        console.error('[Evidences] Falha ao sincronizar o projeto:', error);
+        setSyncUnavailable(true);
+
+        if (notifyFailure && !syncWarningShownRef.current) {
+          syncWarningShownRef.current = true;
+          if (savedLocally) {
+            toast({
+              variant: 'warning',
+              title: isConnectionUnavailable(error)
+                ? 'Sem acesso ao servidor externo'
+                : 'Não foi possível sincronizar',
+              description:
+                'As alterações continuam salvas neste navegador. Clique em "Salvar" para tentar sincronizar novamente quando o acesso estiver disponível.',
+            });
+          } else {
+            toast({
+              variant: 'error',
+              title: 'Não foi possível salvar',
+              description:
+                'O navegador não conseguiu armazenar as alterações e o servidor está indisponível. Verifique o espaço do navegador e tente novamente.',
+            });
+          }
+        }
+
+        return savedLocally ? { status: 'local' } : { status: 'failed' };
+      } finally {
+        setAutoSaving(false);
+      }
+    },
+    [evidenceId, project, navigate, toast],
+  );
 
   useEffect(() => {
     if (isHydratingRef.current) return;
     if (!isDirty) return;
+    if (syncUnavailable) return;
     const handle = setTimeout(() => {
       void handleAutoSave();
     }, 3000);
     return () => clearTimeout(handle);
-  }, [project, isDirty, handleAutoSave]);
+  }, [project, isDirty, syncUnavailable, handleAutoSave]);
 
   // Realtime: quando outro QA salvar este projeto, recebe o novo estado e
   // sobrescreve o local (toast informa quem mexeu). Ignora events do próprio
@@ -484,9 +561,23 @@ export default function Evidences() {
   }, [evidenceId, toast]);
 
   const handleManualSave = async () => {
-    await handleAutoSave();
-    if (!isHydratingRef.current) {
-      toast({ variant: 'success', title: 'Salvo' });
+    const result = await handleAutoSave(false);
+    if (result.status === 'synced') {
+      toast({ variant: 'success', title: 'Salvo e sincronizado' });
+    } else if (result.status === 'local') {
+      toast({
+        variant: 'warning',
+        title: 'Salvo apenas neste navegador',
+        description:
+          'O servidor externo não está acessível. Seus dados foram preservados localmente; tente sincronizar novamente ao sair da VPN.',
+      });
+    } else if (result.status === 'failed') {
+      toast({
+        variant: 'error',
+        title: 'Não foi possível salvar',
+        description:
+          'O navegador não conseguiu armazenar as alterações e o servidor está indisponível. Verifique o espaço do navegador e tente novamente.',
+      });
     }
   };
 
@@ -987,6 +1078,7 @@ export default function Evidences() {
                     isDirty={isDirty}
                     lastSyncAt={lastSyncAt}
                     evidenceId={evidenceId}
+                    syncUnavailable={syncUnavailable}
                   />
                   <Button variant="secondary" onClick={addScenario}>
                     <Plus size={16} /> Novo Cenário
