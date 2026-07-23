@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file=.env src/server.js",
-    "dev": "node --env-file=.env --watch src/server.js"
+    "dev": "node --env-file=.env --watch src/server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.658.1",

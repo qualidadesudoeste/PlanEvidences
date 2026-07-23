@@ -1,7 +1,8 @@
-import { FileText, History, Moon, Sun, Download, Upload, Sparkles, Trash2, Database, FlaskConical } from 'lucide-react';
+import { FileText, History, Moon, Sun, Download, Upload, Sparkles, Trash2, Database, FlaskConical, LogOut } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/auth/AuthContext';
 
 export type EvidenceView = 'editor' | 'history';
 
@@ -30,7 +31,9 @@ export function Sidebar({
   clientName,
 }: Props) {
   const { theme, toggleTheme } = useTheme();
-  const initials = (redator || 'U')
+  const { user, logout } = useAuth();
+  const displayName = user?.name || redator || 'Usuário';
+  const initials = displayName
     .split(' ')
     .map((p) => p[0])
     .slice(0, 2)
@@ -161,9 +164,18 @@ export function Sidebar({
         <div className="user-card">
           <div className="user-avatar">{initials}</div>
           <div className="user-info">
-            <h4>{redator || 'Usuário'}</h4>
-            <span>{clientName || 'Sem cliente'}</span>
+            <h4>{displayName}</h4>
+            <span>{user?.username || clientName || 'SIG'}</span>
           </div>
+          <button
+            type="button"
+            className="user-logout"
+            onClick={() => void logout()}
+            title="Sair do PlanEvidences"
+            aria-label="Sair"
+          >
+            <LogOut size={17} />
+          </button>
         </div>
       </div>
     </aside>

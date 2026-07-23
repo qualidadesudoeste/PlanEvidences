@@ -10,9 +10,16 @@ import type {
 
 const ENDPOINT = '/api/ai-analyze';
 
+function notifyExpiredSession(response: Response) {
+  if (response.status === 401) {
+    window.dispatchEvent(new Event('planevidences:unauthorized'));
+  }
+}
+
 export async function buscarStatusServidor(): Promise<QAServerStatus | null> {
   try {
-    const resp = await fetch(ENDPOINT, { method: 'GET' });
+    const resp = await fetch(ENDPOINT, { method: 'GET', credentials: 'include' });
+    notifyExpiredSession(resp);
     if (!resp.ok) return null;
     return (await resp.json()) as QAServerStatus;
   } catch {
@@ -45,9 +52,11 @@ async function chamarIAUmCard(payload: Record<string, unknown>): Promise<QAAnali
   try {
     resp = await fetch(ENDPOINT, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    notifyExpiredSession(resp);
   } catch (e) {
     throw new Error(
       `Não foi possível alcançar o backend. Confirme que está rodando em http://localhost:4500 (cd backend && npm run dev). Detalhe: ${
@@ -175,9 +184,11 @@ export async function testarKey({
   try {
     resp = await fetch(ENDPOINT, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ testOnly: true, provider, model, apiKey }),
     });
+    notifyExpiredSession(resp);
   } catch (e) {
     throw new Error(
       `Não foi possível alcançar o backend (${ENDPOINT}). Confirme que o servidor está rodando em http://localhost:4500 (cd backend && npm run dev). Detalhe: ${

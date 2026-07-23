@@ -58,6 +58,8 @@ export interface CorrectiveCardContext {
   screenPath: string;
   screenUrl?: string;
   sigCardCode?: string | null;
+  projectName?: string | null;
+  sprintName?: string | null;
   evidenceProjectId?: string | null;
   qaPlanId?: string | null;
   scenarioId?: string | null;
@@ -83,7 +85,20 @@ export interface GenerateCorrectiveCardInput extends CorrectiveCardContext {
 
 /** Porta preparada para uma futura implementação de cadastro direto no SIG. */
 export interface CorrectiveCardPublisher {
-  publish(card: CorrectiveCardDraft, context: CorrectiveCardContext): Promise<{ externalId: string }>;
+  publish(
+    card: CorrectiveCardDraft,
+    context: CorrectiveCardContext,
+    requestId: string
+  ): Promise<PublishedCorrectiveCard>;
+}
+
+export interface PublishedCorrectiveCard {
+  externalId: string;
+  url: string;
+  originCardId: string;
+  project: { id: string; name: string };
+  sprint: { id: string; name: string };
+  activity: { id: string; name: string };
 }
 
 export function scenarioCode(index: number): string {

@@ -1,14 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Bug, Clipboard, Copy, Loader2, RefreshCw, Sparkles, X } from 'lucide-react';
+import {
+  Bug,
+  CheckCircle2,
+  Clipboard,
+  Copy,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  Send,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
 import {
   copyText,
   correctiveCardToMarkdown,
   generateCorrectiveCard,
+  publishCorrectiveCard,
 } from '@/lib/correctiveCards';
 import { getErrorMessage } from '@/lib/utils';
-import type { CorrectiveCardContext, CorrectiveCardDraft } from '@/types';
+import type {
+  CorrectiveCardContext,
+  CorrectiveCardDraft,
+  PublishedCorrectiveCard,
+} from '@/types';
 
 interface Props {
   open: boolean;
@@ -24,15 +40,38 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
   const [errorDescription, setErrorDescription] = useState('');
   const [card, setCard] = useState<CorrectiveCardDraft | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [published, setPublished] = useState<PublishedCorrectiveCard | null>(null);
+  const [publicationRequestId, setPublicationRequestId] = useState(() => crypto.randomUUID());
+  const busy = generating || publishing;
+  const locked = busy || Boolean(published);
+
+  useEffect(() => {
+    if (!open) return;
+    setHu(context.hu);
+    setScreenPath(context.screenPath);
+    setScreenUrl(context.screenUrl || '');
+    setErrorDescription('');
+    setCard(null);
+    setPublished(null);
+    setPublicationRequestId(crypto.randomUUID());
+  }, [
+    open,
+    context.hu,
+    context.screenPath,
+    context.screenUrl,
+    context.scenarioId,
+    context.sigCardCode,
+  ]);
 
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !generating) onClose();
+      if (event.key === 'Escape' && !busy) onClose();
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [open, generating, onClose]);
+  }, [open, busy, onClose]);
 
   const generate = async () => {
     if (errorDescription.trim().length < 10) {
@@ -54,6 +93,8 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
         errorDescription: errorDescription.trim(),
       });
       setCard(generated);
+      setPublished(null);
+      setPublicationRequestId(crypto.randomUUID());
       toast({ variant: 'success', title: 'Card de corretiva gerado' });
     } catch (error) {
       toast({
@@ -75,10 +116,55 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
     }
   };
 
+  const publish = async () => {
+    if (!card) return;
+    if (!context.sigCardCode) {
+      toast({
+        variant: 'error',
+        title: 'Card de origem não identificado',
+        description:
+          'Esta corretiva precisa partir de um cenário importado de um card de melhoria do SIG.',
+      });
+      return;
+    }
+    const confirmed = window.confirm(
+      `Publicar esta corretiva no SIG vinculada ao card #${context.sigCardCode}?\n\nO projeto e a sprint serão obtidos diretamente do card de melhoria.`
+    );
+    if (!confirmed) return;
+
+    setPublishing(true);
+    try {
+      const publication = await publishCorrectiveCard(
+        card,
+        {
+          ...context,
+          hu: hu.trim(),
+          screenPath: screenPath.trim(),
+          screenUrl: screenUrl.trim(),
+        },
+        publicationRequestId
+      );
+      setPublished(publication);
+      toast({
+        variant: 'success',
+        title: `Corretiva #${publication.externalId} criada no SIG`,
+        description: `${publication.project.name} • ${publication.sprint.name}`,
+      });
+    } catch (error) {
+      toast({
+        variant: 'error',
+        title: 'Falha ao publicar no SIG',
+        description: getErrorMessage(error),
+      });
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   if (!open) return null;
 
   return (
-    <div className="corrective-modal-overlay" onMouseDown={() => !generating && onClose()}>
+    <div className="corrective-modal-overlay" onMouseDown={() => !busy && onClose()}>
       <section
         className="corrective-modal card"
         role="dialog"
@@ -102,7 +188,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
             type="button"
             className="icon-button"
             onClick={onClose}
-            disabled={generating}
+            disabled={busy}
             aria-label="Fechar criação de corretiva"
           >
             <X size={20} />
@@ -123,7 +209,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                   value={hu}
                   onChange={(event) => setHu(event.target.value)}
                   placeholder="Ex: HU.206"
-                  disabled={generating}
+                  disabled={locked}
                 />
               </div>
               <div className="form-group">
@@ -133,7 +219,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                   value={screenPath}
                   onChange={(event) => setScreenPath(event.target.value)}
                   placeholder="Ex: Menu > Relatório de Atendimento"
-                  disabled={generating}
+                  disabled={locked}
                 />
               </div>
               <div className="form-group full">
@@ -144,7 +230,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                   value={screenUrl}
                   onChange={(event) => setScreenUrl(event.target.value)}
                   placeholder="Ex: https://sistema.exemplo.local/caminho-da-tela"
-                  disabled={generating}
+                  disabled={locked}
                 />
                 <span className="label-hint">Cole a URL do sistema testado; a IA não inventará esse endereço.</span>
               </div>
@@ -156,14 +242,14 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                   value={errorDescription}
                   onChange={(event) => setErrorDescription(event.target.value)}
                   placeholder="Descreva o que aconteceu durante a execução deste cenário."
-                  disabled={generating}
+                  disabled={locked}
                   autoFocus
                 />
                 <span className="label-hint">A descrição original é preservada ao gerar novamente.</span>
               </div>
             </div>
             <div className="corrective-modal-primary-action">
-              <Button onClick={generate} disabled={generating}>
+              <Button onClick={generate} disabled={busy || Boolean(published)}>
                 {generating ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
                 {generating ? 'Gerando card...' : 'Gerar Card'}
               </Button>
@@ -175,7 +261,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
               <div className="corrective-preview-heading">
                 <div>
                   <h3>Prévia da corretiva</h3>
-                  <p>Revise e edite o conteúdo antes de copiar.</p>
+                  <p>Revise e edite o conteúdo antes de copiar ou publicar.</p>
                 </div>
                 <RefreshCw size={18} />
               </div>
@@ -187,6 +273,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                   rows={2}
                   value={card.title}
                   onChange={(event) => setCard({ ...card, title: event.target.value })}
+                  disabled={locked}
                 />
               </div>
               <div className="form-group">
@@ -196,6 +283,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                   rows={5}
                   value={card.problemDescription}
                   onChange={(event) => setCard({ ...card, problemDescription: event.target.value })}
+                  disabled={locked}
                 />
               </div>
               <div className="form-group">
@@ -207,6 +295,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                   onChange={(event) =>
                     setCard({ ...card, reproductionSteps: event.target.value.split(/\r?\n/) })
                   }
+                  disabled={locked}
                 />
                 <span className="label-hint">Um passo por linha; a numeração é aplicada ao copiar.</span>
               </div>
@@ -217,6 +306,7 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                   rows={4}
                   value={card.currentResult}
                   onChange={(event) => setCard({ ...card, currentResult: event.target.value })}
+                  disabled={locked}
                 />
               </div>
               <div className="form-group">
@@ -226,17 +316,93 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                   rows={4}
                   value={card.expectedResult}
                   onChange={(event) => setCard({ ...card, expectedResult: event.target.value })}
+                  disabled={locked}
                 />
               </div>
 
+              <section className={`sig-publication-box${published ? ' is-published' : ''}`}>
+                <div className="sig-publication-heading">
+                  <div>
+                    <h4>
+                      {published ? <CheckCircle2 size={18} /> : <Send size={18} />}
+                      {published ? `Publicado como #${published.externalId}` : 'Publicação no SIG'}
+                    </h4>
+                    {published ? (
+                      <p>
+                        {published.project.name} • {published.sprint.name}
+                      </p>
+                    ) : (
+                      <p>
+                        O projeto e a sprint serão herdados do card de melhoria
+                        {context.sigCardCode ? ` #${context.sigCardCode}` : ''}.
+                      </p>
+                    )}
+                  </div>
+                  {published && (
+                    <a href={published.url} target="_blank" rel="noopener noreferrer">
+                      Abrir no SIG <ExternalLink size={14} />
+                    </a>
+                  )}
+                </div>
+                {!published && (
+                  <dl className="sig-publication-rules">
+                    <div>
+                      <dt>Categoria</dt>
+                      <dd>Corretiva</dd>
+                    </div>
+                    <div>
+                      <dt>Origem</dt>
+                      <dd>Equipe de Teste</dd>
+                    </div>
+                    <div>
+                      <dt>Tempo previsto</dt>
+                      <dd>0</dd>
+                    </div>
+                    <div>
+                      <dt>Atividade</dt>
+                      <dd>Retrabalho / Correção de erros</dd>
+                    </div>
+                    <div>
+                      <dt>RF de origem</dt>
+                      <dd>{context.sigCardCode ? `#${context.sigCardCode}` : 'Não identificada'}</dd>
+                    </div>
+                  </dl>
+                )}
+              </section>
+
               <div className="corrective-preview-actions">
-                <Button onClick={() => copy(correctiveCardToMarkdown(card, { screenPath, screenUrl }), 'Conteúdo')}>
+                <Button
+                  onClick={publish}
+                  disabled={publishing || Boolean(published) || !context.sigCardCode}
+                >
+                  {publishing ? (
+                    <Loader2 size={16} className="spin" />
+                  ) : published ? (
+                    <CheckCircle2 size={16} />
+                  ) : (
+                    <Send size={16} />
+                  )}
+                  {publishing ? 'Publicando...' : published ? 'Publicado no SIG' : 'Publicar no SIG'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    copy(
+                      correctiveCardToMarkdown(card, { screenPath, screenUrl }),
+                      'Conteúdo'
+                    )
+                  }
+                >
                   <Clipboard size={16} /> Copiar Conteúdo
                 </Button>
                 <Button variant="secondary" onClick={() => copy(card.title, 'Título')}>
                   <Copy size={16} /> Copiar Título
                 </Button>
-                <Button variant="secondary" onClick={generate} disabled={generating}>
+                <Button
+                  variant="secondary"
+                  onClick={generate}
+                  disabled={generating || Boolean(published)}
+                >
                   {generating ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
                   Gerar Novamente
                 </Button>

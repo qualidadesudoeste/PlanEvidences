@@ -84,6 +84,28 @@ Mínimo pro gerador rodar: chave de IA em `backend/.env` (`GEMINI_API_KEY`, `ANT
 
 Pra Editor de Evidências completo: `STORAGE_*` (S3-compatível) + `DATABASE_URL` (Postgres).
 
+Pra autenticar os usuários e publicar corretivas diretamente no SIG, configure no `backend/.env`:
+
+```env
+SIG_API_URL=https://sigv3.sudoesteinformatica.com.br/sig_v3
+SIG_WEB_URL=https://sigv3.sudoesteinformatica.com.br
+SIG_CORRECTIVE_ACTIVITY_ID=10
+SESSION_TTL_HOURS=8
+SESSION_COOKIE_SECURE=false
+```
+
+Cada pessoa entra no PlanEvidences com o mesmo usuário e senha usados no SIG. A senha é
+encaminhada apenas durante o login e não é gravada pelo PlanEvidences. O backend mantém em memória
+somente os tokens temporários retornados pelo SIG; portanto, reiniciar o serviço encerra as sessões.
+Ao publicar, o card é criado com o token do usuário conectado, preservando a autoria no SIG.
+
+O backend localiza o card de melhoria informado no cenário e herda dele o projeto e a sprint.
+Categoria, origem, tempo previsto e atividade são validados no servidor antes da publicação.
+
+> O ambiente atual usa HTTP apenas por estar restrito à rede interna. Nesse modo,
+> `SESSION_COOKIE_SECURE=false`. Quando o serviço receber HTTPS, altere para `true`; sem HTTPS,
+> usuário e senha não são criptografados durante o tráfego entre navegador e servidor.
+
 Mudou `frontend/.env`? roda o build de novo:
 
 ```powershell
@@ -245,6 +267,8 @@ Storage: crie um bucket público chamado `planevidences` (Storage → New bucket
 | GET | `/api/ai-analyze` | Status de IA configurada no servidor |
 | POST | `/api/ai-analyze` | Análise IA (recebe cards, devolve casos) |
 | POST | `/api/ai-analyze/bug-card` | Gera card padronizado de corretiva a partir do relato do QA |
+| GET | `/api/sig/status` | Informa se a integração com o SIG está configurada |
+| POST | `/api/sig/correctives` | Publica a corretiva no projeto e sprint do card de melhoria |
 | POST | `/api/upload` | Upload de imagem (S3) |
 | POST | `/api/documents` | Compila LaTeX → PDF |
 | GET | `/api/documents` | Lista histórico de documentos gerados |

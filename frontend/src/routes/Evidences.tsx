@@ -307,6 +307,8 @@ export default function Evidences() {
       screenPath: bugScenario?.cardCaminho || '',
       screenUrl: extractUrlFromScenario(bugScenario?.evidence, bugScenario?.bdd),
       sigCardCode: bugScenario?.cardCodigo || null,
+      projectName: project.projectName || null,
+      sprintName: project.sprintName || null,
       evidenceProjectId: evidenceId,
       qaPlanId: project.qaPlanId,
       scenarioId: bugScenario?.id || null,
@@ -317,7 +319,14 @@ export default function Evidences() {
       caseId: bugScenario?.caseId || null,
       evidenceImageKeys: bugScenario?.images.map((image) => image.key).filter(Boolean) || [],
     };
-  }, [bugScenario, evidenceId, project.qaPlanId, project.scenarios]);
+  }, [
+    bugScenario,
+    evidenceId,
+    project.projectName,
+    project.qaPlanId,
+    project.scenarios,
+    project.sprintName,
+  ]);
 
   // Sincroniza ID na URL e no localStorage
   useEffect(() => {

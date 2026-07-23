@@ -6,6 +6,9 @@ import { existsSync } from 'node:fs';
 import uploadRouter from './routes/upload.js';
 import documentsRouter from './routes/documents.js';
 import aiRouter from './routes/ai.js';
+import sigRouter from './routes/sig.js';
+import authRouter from './routes/auth.js';
+import { requireAuth } from './services/authSessions.js';
 import { ensureSchema } from './db.js';
 
 const app = express();
@@ -18,19 +21,22 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
 
 app.use(
   cors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
-    credentials: false,
+    origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+    credentials: true,
   })
 );
 app.use(express.json({ limit: '50mb' }));
 
-app.use('/api/upload', uploadRouter);
-app.use('/api/documents', documentsRouter);
-app.use('/api/ai-analyze', aiRouter);
-
+app.use('/api/auth', authRouter);
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+app.use('/api', requireAuth);
+app.use('/api/upload', uploadRouter);
+app.use('/api/documents', documentsRouter);
+app.use('/api/ai-analyze', aiRouter);
+app.use('/api/sig', sigRouter);
 
 // Serve frontend build (Vite dist/) quando presente. Em dev o Vite serve por
 // conta própria na 5173; em produção (Smart Sig Runner) o mesmo processo Node
@@ -69,6 +75,6 @@ app.listen(PORT, () => {
   if (allowedOrigins.length > 0) {
     console.log(`[backend] CORS allowed: ${allowedOrigins.join(', ')}`);
   } else {
-    console.log('[backend] CORS: open (set ALLOWED_ORIGINS to restrict)');
+    console.log('[backend] CORS: same-origin only');
   }
 });

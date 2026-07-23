@@ -1,6 +1,8 @@
 import type {
   CorrectiveCardDraft,
+  CorrectiveCardContext,
   GenerateCorrectiveCardInput,
+  PublishedCorrectiveCard,
   QAAIConfig,
   QAServerStatus,
 } from '@/types';
@@ -11,6 +13,23 @@ interface BugCardResponse {
   ok: boolean;
   error?: string;
   card?: CorrectiveCardDraft;
+}
+
+interface SigPublicationResponse {
+  ok: boolean;
+  code?: string;
+  error?: string;
+  publication?: PublishedCorrectiveCard;
+}
+
+export class SigPublicationError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'SigPublicationError';
+    this.code = code;
+  }
 }
 
 async function readResponse(response: Response): Promise<BugCardResponse> {
@@ -40,6 +59,7 @@ export async function generateCorrectiveCard(
   const config = carregarConfigIA();
   const response = await fetch('/api/ai-analyze/bug-card', {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...input, ...aiPayload(status, config) }),
   }).catch((error) => {
@@ -55,6 +75,42 @@ export async function generateCorrectiveCard(
     throw new Error(data.error || 'Não foi possível gerar o card. Tente novamente.');
   }
   return data.card;
+}
+
+export async function publishCorrectiveCard(
+  card: CorrectiveCardDraft,
+  context: CorrectiveCardContext,
+  requestId: string
+): Promise<PublishedCorrectiveCard> {
+  const response = await fetch('/api/sig/correctives', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ card, context, requestId }),
+  }).catch(() => {
+    throw new Error(
+      'Não foi possível comunicar com o servidor para publicar a corretiva no SIG.'
+    );
+  });
+  const raw = await response.text();
+  let data: SigPublicationResponse;
+  try {
+    data = raw ? (JSON.parse(raw) as SigPublicationResponse) : { ok: false };
+  } catch {
+    throw new Error('O servidor retornou uma resposta inválida ao publicar no SIG.');
+  }
+  if (response.status === 401) {
+    window.dispatchEvent(new Event('planevidences:unauthorized'));
+  }
+  if (!response.ok || !data.ok || !data.publication) {
+    throw new SigPublicationError(
+      data.error || 'Não foi possível publicar a corretiva no SIG.',
+      data.code
+    );
+  }
+  return data.publication;
 }
 
 export function correctiveCardToMarkdown(

@@ -10,6 +10,9 @@ export function resolveAssetUrl(p: string | null | undefined): string {
 }
 
 async function handle<T>(res: Response): Promise<T> {
+  if (res.status === 401) {
+    window.dispatchEvent(new Event('planevidences:unauthorized'));
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(text || `Erro ${res.status}`);
@@ -29,12 +32,16 @@ export async function uploadImages(
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE}/upload`);
+    xhr.withCredentials = true;
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {
         onProgress(Math.round((e.loaded / e.total) * 100));
       }
     };
     xhr.onload = () => {
+      if (xhr.status === 401) {
+        window.dispatchEvent(new Event('planevidences:unauthorized'));
+      }
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           resolve(JSON.parse(xhr.responseText));
@@ -51,14 +58,17 @@ export async function uploadImages(
 }
 
 export async function deleteUpload(sessionId: string, filename: string): Promise<void> {
-  await fetch(`${API_BASE}/upload/${encodeURIComponent(sessionId)}/${encodeURIComponent(filename)}`, {
+  const res = await fetch(`${API_BASE}/upload/${encodeURIComponent(sessionId)}/${encodeURIComponent(filename)}`, {
     method: 'DELETE',
+    credentials: 'include',
   });
+  if (!res.ok) await handle<never>(res);
 }
 
 export async function generateDocument(project: Project): Promise<GeneratedDoc> {
   const res = await fetch(`${API_BASE}/documents/generate`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(project),
   });
@@ -66,16 +76,22 @@ export async function generateDocument(project: Project): Promise<GeneratedDoc> 
 }
 
 export async function listDocuments(): Promise<{ items: GeneratedDoc[] }> {
-  const res = await fetch(`${API_BASE}/documents`);
+  const res = await fetch(`${API_BASE}/documents`, { credentials: 'include' });
   return handle<{ items: GeneratedDoc[] }>(res);
 }
 
 export async function deleteDocument(id: string): Promise<void> {
-  await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok) await handle<never>(res);
 }
 
 export async function getDocumentProject(id: string): Promise<Project> {
-  const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}/project`);
+  const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}/project`, {
+    credentials: 'include',
+  });
   const data = await handle<{ project: Project }>(res);
   return data.project;
 }
