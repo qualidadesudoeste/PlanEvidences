@@ -903,6 +903,168 @@ select:focus {
   gap: 10px;
 }
 
+.corrective-attachments {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--primary-light));
+}
+
+.corrective-attachments-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.corrective-attachments-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.corrective-attachments-heading strong {
+  font-size: 14px;
+}
+
+.corrective-attachments-heading span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.corrective-attachments-count {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--primary) !important;
+  background: var(--primary-light);
+  font-weight: 700;
+}
+
+.corrective-attachments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.corrective-attachment-card,
+.corrective-attachment-drop {
+  min-height: 126px;
+  border-radius: 13px;
+  overflow: hidden;
+}
+
+.corrective-attachment-card {
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.corrective-attachment-card img {
+  width: 100%;
+  height: 126px;
+  display: block;
+  object-fit: cover;
+}
+
+.corrective-attachment-card > span {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 7px 9px;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.76));
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.corrective-attachment-card > button {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  color: var(--danger);
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.corrective-attachment-drop {
+  padding: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 2px dashed #a7dca6;
+  color: var(--primary);
+  background: rgba(30, 158, 34, 0.035);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.corrective-attachment-drop:hover,
+.corrective-attachment-drop.is-dragging {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.corrective-attachment-drop:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.corrective-attachment-drop strong {
+  font-size: 12px;
+}
+
+.corrective-attachment-drop > span,
+.corrective-attachment-drop small {
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.corrective-attachment-drop small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.sig-attachment-warning {
+  margin-top: 12px;
+  padding: 11px 12px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(255, 181, 71, 0.5);
+  border-radius: 11px;
+  color: #8a5900;
+  background: rgba(255, 181, 71, 0.12);
+  font-size: 12px;
+}
+
+.sig-attachment-warning span {
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.sig-attachment-warning ul {
+  margin: 5px 0 0 18px;
+  color: var(--text-secondary);
+}
+
+.sig-attachment-warning li + li {
+  margin-top: 3px;
+}
+
 .corrective-preview {
   margin-top: 22px;
   padding-top: 22px;

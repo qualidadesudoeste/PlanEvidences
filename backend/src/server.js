@@ -8,6 +8,7 @@ import documentsRouter from './routes/documents.js';
 import aiRouter from './routes/ai.js';
 import sigRouter from './routes/sig.js';
 import authRouter from './routes/auth.js';
+import correctiveAttachmentsRouter from './routes/correctiveAttachments.js';
 import { requireAuth } from './services/authSessions.js';
 import { ensureSchema } from './db.js';
 
@@ -34,6 +35,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api', requireAuth);
 app.use('/api/upload', uploadRouter);
+app.use('/api/corrective-attachments', correctiveAttachmentsRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/ai-analyze', aiRouter);
 app.use('/api/sig', sigRouter);
@@ -58,9 +60,19 @@ if (existsSync(frontendIndex)) {
 
 app.use((err, _req, res, _next) => {
   console.error('[error]', err);
-  const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
+  const uploadLimitError = err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_FILE_COUNT';
+  const status = uploadLimitError
+    ? 400
+    : err.status && err.status >= 400 && err.status < 600
+      ? err.status
+      : 500;
   res.status(status).json({
-    error: err.message || 'Erro interno do servidor',
+    error:
+      err.code === 'LIMIT_FILE_SIZE'
+        ? 'Cada print deve ter no máximo 20 MB.'
+        : err.code === 'LIMIT_FILE_COUNT'
+          ? 'Envie no máximo 10 prints por vez.'
+          : err.message || 'Erro interno do servidor',
     code: err.code,
     detail: err.detail,
   });

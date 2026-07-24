@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CorrectiveAttachmentUploader } from '@/components/CorrectiveAttachmentUploader';
 import { useToast } from '@/hooks/useToast';
 import {
   copyText,
@@ -23,6 +24,7 @@ import { getErrorMessage } from '@/lib/utils';
 import type {
   CorrectiveCardContext,
   CorrectiveCardDraft,
+  CorrectiveAttachment,
   PublishedCorrectiveCard,
 } from '@/types';
 
@@ -40,11 +42,14 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
   const [errorDescription, setErrorDescription] = useState('');
   const [card, setCard] = useState<CorrectiveCardDraft | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState<PublishedCorrectiveCard | null>(null);
+  const [attachments, setAttachments] = useState<CorrectiveAttachment[]>([]);
   const [publicationRequestId, setPublicationRequestId] = useState(() => crypto.randomUUID());
-  const busy = generating || publishing;
+  const busy = generating || publishing || uploadingAttachments;
   const locked = busy || Boolean(published);
+  const failedAttachments = published?.attachments?.failed || 0;
 
   useEffect(() => {
     if (!open) return;
@@ -54,6 +59,8 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
     setErrorDescription('');
     setCard(null);
     setPublished(null);
+    setAttachments([]);
+    setUploadingAttachments(false);
     setPublicationRequestId(crypto.randomUUID());
   }, [
     open,
@@ -94,7 +101,6 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
       });
       setCard(generated);
       setPublished(null);
-      setPublicationRequestId(crypto.randomUUID());
       toast({ variant: 'success', title: 'Card de corretiva gerado' });
     } catch (error) {
       toast({
@@ -128,10 +134,13 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
       return;
     }
     const confirmed = window.confirm(
-      `Publicar esta corretiva no SIG vinculada ao card #${context.sigCardCode}?\n\nO projeto e a sprint serão obtidos diretamente do card de melhoria.`
+      published && failedAttachments > 0
+        ? `Tentar enviar novamente ${failedAttachments} print(s) pendente(s) para a corretiva #${published.externalId}?`
+        : `Publicar esta corretiva no SIG vinculada ao card #${context.sigCardCode}?\n\n${attachments.length} print(s) do erro serão anexados. O projeto e a sprint serão obtidos diretamente do card de melhoria.`
     );
     if (!confirmed) return;
 
+    const retryingAttachments = Boolean(published);
     setPublishing(true);
     try {
       const publication = await publishCorrectiveCard(
@@ -141,14 +150,20 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
           hu: hu.trim(),
           screenPath: screenPath.trim(),
           screenUrl: screenUrl.trim(),
+          correctiveAttachments: attachments,
         },
         publicationRequestId
       );
       setPublished(publication);
       toast({
-        variant: 'success',
-        title: `Corretiva #${publication.externalId} criada no SIG`,
-        description: `${publication.project.name} • ${publication.sprint.name}`,
+        variant: publication.attachments.failed > 0 ? 'error' : 'success',
+        title: retryingAttachments
+          ? `Anexos da corretiva #${publication.externalId} processados`
+          : `Corretiva #${publication.externalId} criada no SIG`,
+        description:
+          publication.attachments.failed > 0
+            ? `${publication.attachments.uploaded} de ${publication.attachments.total} prints anexados. Use "Tentar anexos novamente".`
+            : `${publication.project.name} • ${publication.sprint.name} • ${publication.attachments.uploaded} print(s) anexado(s)`,
       });
     } catch (error) {
       toast({
@@ -247,6 +262,15 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                 />
                 <span className="label-hint">A descrição original é preservada ao gerar novamente.</span>
               </div>
+              <div className="form-group full">
+                <CorrectiveAttachmentUploader
+                  requestId={publicationRequestId}
+                  attachments={attachments}
+                  onChange={setAttachments}
+                  onUploadingChange={setUploadingAttachments}
+                  disabled={generating || publishing || Boolean(published)}
+                />
+              </div>
             </div>
             <div className="corrective-modal-primary-action">
               <Button onClick={generate} disabled={busy || Boolean(published)}>
@@ -329,7 +353,9 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                     </h4>
                     {published ? (
                       <p>
-                        {published.project.name} • {published.sprint.name}
+                        {published.project.name} • {published.sprint.name} •{' '}
+                        {published.attachments.uploaded} de {published.attachments.total} prints
+                        anexados
                       </p>
                     ) : (
                       <p>
@@ -344,6 +370,25 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                     </a>
                   )}
                 </div>
+                {published && failedAttachments > 0 && (
+                  <div className="sig-attachment-warning">
+                    <strong>{failedAttachments} print(s) ainda não foram anexados.</strong>
+                    <span>
+                      O card já foi criado. A nova tentativa enviará somente os anexos pendentes,
+                      sem duplicar a corretiva.
+                    </span>
+                    <ul>
+                      {published.attachments.items
+                        .filter((item) => item.status === 'failed')
+                        .map((item) => (
+                          <li key={item.key}>
+                            {item.name}
+                            {item.error ? ` — ${item.error}` : ''}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
                 {!published && (
                   <dl className="sig-publication-rules">
                     <div>
@@ -366,6 +411,10 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
                       <dt>RF de origem</dt>
                       <dd>{context.sigCardCode ? `#${context.sigCardCode}` : 'Não identificada'}</dd>
                     </div>
+                    <div>
+                      <dt>Prints do erro</dt>
+                      <dd>{attachments.length}</dd>
+                    </div>
                   </dl>
                 )}
               </section>
@@ -373,16 +422,30 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
               <div className="corrective-preview-actions">
                 <Button
                   onClick={publish}
-                  disabled={publishing || Boolean(published) || !context.sigCardCode}
+                  disabled={
+                    publishing ||
+                    (Boolean(published) && failedAttachments === 0) ||
+                    !context.sigCardCode
+                  }
                 >
                   {publishing ? (
                     <Loader2 size={16} className="spin" />
-                  ) : published ? (
+                  ) : published && failedAttachments === 0 ? (
                     <CheckCircle2 size={16} />
+                  ) : published ? (
+                    <RefreshCw size={16} />
                   ) : (
                     <Send size={16} />
                   )}
-                  {publishing ? 'Publicando...' : published ? 'Publicado no SIG' : 'Publicar no SIG'}
+                  {publishing
+                    ? published
+                      ? 'Reenviando anexos...'
+                      : 'Publicando...'
+                    : published && failedAttachments > 0
+                      ? 'Tentar anexos novamente'
+                      : published
+                        ? 'Publicado no SIG'
+                        : 'Publicar no SIG'}
                 </Button>
                 <Button
                   variant="secondary"

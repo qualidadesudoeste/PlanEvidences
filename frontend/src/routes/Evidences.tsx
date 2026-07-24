@@ -317,7 +317,6 @@ export default function Evidences() {
       scenarioBdd: bugScenario?.bdd || null,
       evidenceDescription: bugScenario?.evidence || null,
       caseId: bugScenario?.caseId || null,
-      evidenceImageKeys: bugScenario?.images.map((image) => image.key).filter(Boolean) || [],
     };
   }, [
     bugScenario,

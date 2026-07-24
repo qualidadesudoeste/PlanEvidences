@@ -102,6 +102,14 @@ Ao publicar, o card é criado com o token do usuário conectado, preservando a a
 O backend localiza o card de melhoria informado no cenário e herda dele o projeto e a sprint.
 Categoria, origem, tempo previsto e atividade são validados no servidor antes da publicação.
 
+Os **prints do erro** adicionados na janela "Criar corretiva" são independentes das imagens de
+evidência do cenário. Eles são armazenados em um caminho dedicado
+`correctives/<usuario>/<requestId>/`
+e, depois que o SIG retorna o ID do novo card, enviados como anexos reais para
+`/kanban/cases/<id>/attachments`. São aceitos até 10 arquivos PNG/JPG, com limite de 20 MB cada.
+As imagens anexadas ao critério BDD continuam exclusivas do documento final e nunca são
+selecionadas automaticamente para a corretiva. Esse fluxo depende das configurações `STORAGE_*`.
+
 > O ambiente atual usa HTTP apenas por estar restrito à rede interna. Nesse modo,
 > `SESSION_COOKIE_SECURE=false`. Quando o serviço receber HTTPS, altere para `true`; sem HTTPS,
 > usuário e senha não são criptografados durante o tráfego entre navegador e servidor.

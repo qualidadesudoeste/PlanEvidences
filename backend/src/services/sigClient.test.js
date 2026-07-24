@@ -7,6 +7,7 @@ import {
   publishCorrectiveCard,
   refreshSigUserSession,
   resolveCorrectiveLookups,
+  uploadCorrectiveAttachmentsToSig,
 } from './sigClient.js';
 
 const lookups = {
@@ -132,6 +133,46 @@ test('renova o token usando somente o cookie de atualização do SIG', async () 
   }
 });
 
+test('envia o print como anexo real do card no endpoint multipart do SIG', async () => {
+  const originalFetch = global.fetch;
+  let request;
+  global.fetch = async (url, options = {}) => {
+    request = { url: String(url), options };
+    return new Response(JSON.stringify({ id: 9901, nome: 'erro-no-filtro.png' }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  try {
+    const results = await uploadCorrectiveAttachmentsToSig(
+      'user-access-token',
+      120001,
+      [
+        {
+          key: 'correctives/42/request-123/print.png',
+          filename: 'print.png',
+          originalName: 'erro-no-filtro.png',
+          mimeType: 'image/png',
+        },
+      ],
+      { readObject: async () => Buffer.from('fake-png-content') }
+    );
+    assert.equal(
+      request.url,
+      'https://sigv3.sudoesteinformatica.com.br/sig_v3/kanban/cases/120001/attachments'
+    );
+    assert.equal(request.options.method, 'POST');
+    assert.equal(request.options.headers.Authorization, 'Bearer user-access-token');
+    const uploadedFile = request.options.body.get('arquivo');
+    assert.equal(uploadedFile.name, 'erro-no-filtro.png');
+    assert.equal(uploadedFile.type, 'image/png');
+    assert.equal(results[0].status, 'uploaded');
+    assert.equal(results[0].externalId, '9901');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('publica com o token do usuário conectado sem depender de nomes de projeto ou sprint', async () => {
   const originalFetch = global.fetch;
   const originalEnv = {
@@ -180,6 +221,12 @@ test('publica com o token do usuário conectado sem depender de nomes de projeto
     assert.equal(publication.project.id, '438');
     assert.equal(publication.sprint.id, '20440');
     assert.equal(publication.activity.id, '10');
+    assert.deepEqual(publication.attachments, {
+      total: 0,
+      uploaded: 0,
+      failed: 0,
+      items: [],
+    });
 
     const createRequest = requests.find(
       (request) => request.url.endsWith('/cases') && request.method === 'POST'

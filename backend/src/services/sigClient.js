@@ -1,3 +1,10 @@
+import { getObjectBuffer } from '../storage.js';
+import {
+  correctiveAttachmentPrefix,
+  safeAttachmentName,
+  validateCorrectiveRequestId,
+} from './correctiveAttachmentPaths.js';
+
 const DEFAULT_SIG_API_URL = 'https://sigv3.sudoesteinformatica.com.br/sig_v3';
 const DEFAULT_SIG_WEB_URL = 'https://sigv3.sudoesteinformatica.com.br';
 const CORRECTIVE_ACTIVITY_NAME = 'Retrabalho / Correção de erros';
@@ -453,7 +460,138 @@ function validateCard(card) {
   }
 }
 
-async function doPublishCorrectiveCard(card, context, accessToken, userCacheKey) {
+function attachmentMimeType(attachment) {
+  if (attachment?.mimeType === 'image/png' || /\.png$/i.test(attachment?.filename || '')) {
+    return 'image/png';
+  }
+  return 'image/jpeg';
+}
+
+function normalizedCorrectiveAttachments(context, userCacheKey, requestId) {
+  const prefix = correctiveAttachmentPrefix(userCacheKey, requestId);
+  const seen = new Set();
+  return (Array.isArray(context?.correctiveAttachments) ? context.correctiveAttachments : [])
+    .filter((attachment) => {
+      const key = String(attachment?.key || '');
+      if (!key.startsWith(prefix) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 10)
+    .map((attachment) => ({
+      key: String(attachment.key),
+      filename: String(attachment.filename || ''),
+      originalName: safeAttachmentName(attachment.originalName),
+      mimeType: attachmentMimeType(attachment),
+    }));
+}
+
+export async function uploadCorrectiveAttachmentsToSig(
+  accessToken,
+  caseId,
+  attachments,
+  { readObject = getObjectBuffer } = {}
+) {
+  const { apiUrl, timeoutMs } = config();
+  const results = [];
+
+  for (const attachment of attachments) {
+    try {
+      const buffer = await readObject(attachment.key);
+      if (!buffer?.length) throw new Error('O arquivo está vazio.');
+      if (buffer.length > 20 * 1024 * 1024) {
+        throw new Error('O arquivo ultrapassa o limite de 20 MB do SIG.');
+      }
+
+      const form = new FormData();
+      const filename = safeAttachmentName(
+        attachment.originalName,
+        attachment.mimeType === 'image/png' ? 'evidencia.png' : 'evidencia.jpg'
+      );
+      form.append('arquivo', new Blob([buffer], { type: attachment.mimeType }), filename);
+      const response = await fetchWithTimeout(
+        `${apiUrl}/kanban/cases/${Number(caseId)}/attachments`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: form,
+        },
+        timeoutMs
+      );
+      const data = parseJson(await response.text());
+      if (!response.ok) {
+        const externalMessage = String(data.error || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+        throw new Error(
+          externalMessage || `O SIG recusou o anexo (HTTP ${response.status}).`
+        );
+      }
+      results.push({
+        key: attachment.key,
+        name: filename,
+        status: 'uploaded',
+        externalId: data.id === undefined ? null : String(data.id),
+      });
+    } catch (error) {
+      results.push({
+        key: attachment.key,
+        name: attachment.originalName,
+        status: 'failed',
+        error:
+          error instanceof SigIntegrationError
+            ? error.message
+            : String(error?.message || 'Não foi possível enviar este anexo ao SIG.').slice(0, 300),
+      });
+    }
+  }
+  return results;
+}
+
+function summarizeAttachments(items) {
+  const uploaded = items.filter((item) => item.status === 'uploaded').length;
+  return {
+    total: items.length,
+    uploaded,
+    failed: items.length - uploaded,
+    items,
+  };
+}
+
+async function attachPendingEvidence(
+  publication,
+  context,
+  requestId,
+  accessToken,
+  userCacheKey
+) {
+  const requested = normalizedCorrectiveAttachments(context, userCacheKey, requestId);
+  const priorItems = Array.isArray(publication.attachments?.items)
+    ? publication.attachments.items
+    : [];
+  const uploadedKeys = new Set(
+    priorItems.filter((item) => item.status === 'uploaded').map((item) => item.key)
+  );
+  const pending = requested.filter((attachment) => !uploadedKeys.has(attachment.key));
+  const retried = await uploadCorrectiveAttachmentsToSig(
+    accessToken,
+    publication.externalId,
+    pending
+  );
+  const retriedKeys = new Set(retried.map((item) => item.key));
+  const merged = [
+    ...priorItems.filter((item) => !retriedKeys.has(item.key)),
+    ...retried,
+  ];
+  publication.attachments = summarizeAttachments(merged);
+  return publication;
+}
+
+async function doPublishCorrectiveCard(
+  card,
+  context,
+  requestId,
+  accessToken,
+  userCacheKey
+) {
   validateCard(card);
   const lookups = await loadLookups(accessToken, userCacheKey);
   const resolved = resolveCorrectiveLookups(
@@ -472,14 +610,22 @@ async function doPublishCorrectiveCard(card, context, accessToken, userCacheKey)
   }
 
   const { webUrl } = config();
-  return {
+  const publication = {
     externalId: String(externalId),
     url: `${webUrl}/projects/${resolved.project.id}/sprints/${resolved.sprint.id}/requisitos/${externalId}`,
     originCardId: String(resolved.originCard.id),
     project: { id: String(resolved.project.id), name: resolved.project.nome },
     sprint: { id: String(resolved.sprint.id), name: resolved.sprint.nome },
     activity: { id: String(resolved.activity.id), name: resolved.activity.nome },
+    attachments: summarizeAttachments([]),
   };
+  return attachPendingEvidence(
+    publication,
+    context,
+    requestId,
+    accessToken,
+    userCacheKey
+  );
 }
 
 export async function publishCorrectiveCard(
@@ -489,8 +635,8 @@ export async function publishCorrectiveCard(
   accessToken,
   userCacheKey
 ) {
-  const key = String(requestId || '').trim();
-  if (!/^[a-zA-Z0-9._:-]{8,120}$/.test(key)) {
+  const key = validateCorrectiveRequestId(requestId);
+  if (!key) {
     throw new SigIntegrationError('Identificador da publicação inválido. Reabra a corretiva e tente novamente.', {
       status: 400,
       code: 'SIG_INVALID_REQUEST_ID',
@@ -504,20 +650,41 @@ export async function publishCorrectiveCard(
     });
   }
   const scopedKey = `${String(userCacheKey || 'user')}:${key}`;
-  if (publicationRequests.has(scopedKey)) return publicationRequests.get(scopedKey);
-  const publication = doPublishCorrectiveCard(
+  const existing = publicationRequests.get(scopedKey);
+  if (existing?.promise) return existing.promise;
+  if (existing?.publication) {
+    existing.promise = attachPendingEvidence(
+      existing.publication,
+      context,
+      key,
+      accessToken,
+      String(userCacheKey || 'user')
+    );
+    try {
+      return await existing.promise;
+    } finally {
+      existing.promise = null;
+    }
+  }
+
+  const record = { promise: null, publication: null };
+  record.promise = doPublishCorrectiveCard(
     card,
     context,
+    key,
     accessToken,
     String(userCacheKey || 'user')
   );
-  publicationRequests.set(scopedKey, publication);
+  publicationRequests.set(scopedKey, record);
   try {
-    const result = await publication;
+    const result = await record.promise;
+    record.publication = result;
     setTimeout(() => publicationRequests.delete(scopedKey), 60 * 60_000).unref?.();
     return result;
   } catch (error) {
     publicationRequests.delete(scopedKey);
     throw error;
+  } finally {
+    record.promise = null;
   }
 }

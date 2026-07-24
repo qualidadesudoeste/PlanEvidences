@@ -7,6 +7,10 @@ export interface UploadedImage {
   size: number;
 }
 
+export interface CorrectiveAttachment extends UploadedImage {
+  mimeType: 'image/png' | 'image/jpeg';
+}
+
 export interface Scenario {
   id: string;
   title: string;
@@ -68,7 +72,7 @@ export interface CorrectiveCardContext {
   scenarioBdd?: string | null;
   evidenceDescription?: string | null;
   caseId?: string | null;
-  evidenceImageKeys?: string[];
+  correctiveAttachments?: CorrectiveAttachment[];
 }
 
 export interface CorrectiveCardDraft {
@@ -99,6 +103,18 @@ export interface PublishedCorrectiveCard {
   project: { id: string; name: string };
   sprint: { id: string; name: string };
   activity: { id: string; name: string };
+  attachments: {
+    total: number;
+    uploaded: number;
+    failed: number;
+    items: Array<{
+      key: string;
+      name: string;
+      status: 'uploaded' | 'failed';
+      externalId?: string | null;
+      error?: string;
+    }>;
+  };
 }
 
 export function scenarioCode(index: number): string {
