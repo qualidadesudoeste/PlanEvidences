@@ -6,12 +6,15 @@
 # Uso:
 #   .\deploy\update.ps1                    # git pull + reinstala + rebuilda
 #   .\deploy\update.ps1 -RestartService    # idem + reinicia o Windows Service
+#   .\deploy\update.ps1 -RestartService -BuildRunnerPackage
 #   .\deploy\update.ps1 -SkipPull          # pula git pull (usa código local)
 # =============================================================================
 
 param(
     [switch]$RestartService,
     [switch]$SkipPull,
+    [switch]$BuildRunnerPackage,
+    [string]$PlanEvidencesUrl = 'http://136.248.115.65:4500',
     [string]$ServiceName = 'PlanEvidences'
 )
 
@@ -63,6 +66,13 @@ try {
         npm run build
         if ($LASTEXITCODE -ne 0) { throw 'npm run build falhou' }
     } finally { Pop-Location }
+
+    # ===== Pacote distribuível do Runner =====
+    if ($BuildRunnerPackage) {
+        Write-Section 'Gerando pacote Windows do Runner Local'
+        & (Join-Path $repoRoot 'runner\build-portable.ps1') `
+            -PlanEvidencesUrl $PlanEvidencesUrl
+    }
 
     # ===== Restart service =====
     if ($RestartService) {

@@ -16,6 +16,8 @@ import { ensureSchema } from './db.js';
 
 const app = express();
 const PORT = process.env.PORT || 4500;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const downloadsDir = path.resolve(__dirname, '..', '..', 'downloads');
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -37,6 +39,19 @@ app.use('/api/automation-runner', automationRunnerRouter);
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+app.use(
+  '/downloads',
+  express.static(downloadsDir, {
+    fallthrough: false,
+    index: false,
+    maxAge: '10m',
+    setHeaders(res, filePath) {
+      if (/\.(?:zip|exe)$/i.test(filePath)) {
+        res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
+      }
+    },
+  })
+);
 
 app.use('/api', requireAuth);
 app.use('/api/upload', uploadRouter);
@@ -49,7 +64,6 @@ app.use('/api/sig', sigRouter);
 // Serve frontend build (Vite dist/) quando presente. Em dev o Vite serve por
 // conta própria na 5173; em produção (Smart Sig Runner) o mesmo processo Node
 // entrega frontend e API na mesma porta. Caminho: backend/src/server.js → ../../frontend/dist.
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendDist = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
 const frontendIndex = path.join(frontendDist, 'index.html');
 

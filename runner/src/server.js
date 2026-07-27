@@ -220,7 +220,7 @@ export const server = http.createServer(async (req, res) => {
     sendJson(req, res, 200, {
       ok: true,
       name: 'PlanEvidences Runner Local',
-      version: '0.1.0',
+      version: '0.1.1',
       busy: Boolean(activeRunId),
       configuredOrigin,
     });

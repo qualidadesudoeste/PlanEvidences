@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  authenticationObservationState,
+  authenticationSucceeded,
   ensureAllowedNavigation,
   ensureObservationOrigin,
+  isLoginSubmission,
   redactSecrets,
   safeHistoryArguments,
   substituteSecrets,
@@ -99,4 +102,63 @@ test('protege valores digitados no histórico e bloqueia navegação fora da ori
       ),
     /saiu das origens autorizadas/
   );
+});
+
+test('reconhece formulário de login e confirma a sessão após o formulário desaparecer', () => {
+  const login = authenticationObservationState(`
+    ### Page
+    - Page URL: https://cliente.local/login
+    - textbox "Usuário" [ref=e1]
+    - textbox "Senha" [ref=e2]
+    - button "Entrar" [ref=e3]
+  `);
+  assert.equal(login.loginFormVisible, true);
+  assert.equal(login.hasPasswordField, true);
+
+  assert.equal(
+    authenticationSucceeded({
+      observation: `
+        ### Page
+        - Page URL: https://cliente.local/inicio
+        - heading "Bem-vindo" [ref=e10]
+        - navigation "Menu principal" [ref=e11]
+      `,
+      credentialUsage: { username: true, password: true },
+      submitted: true,
+    }),
+    true
+  );
+});
+
+test('não confirma login com credencial recusada ou desafio adicional', () => {
+  assert.equal(
+    authenticationSucceeded({
+      observation: `
+        ### Page
+        - Page URL: https://cliente.local/login
+        - text "Usuário ou senha inválido"
+        - textbox "Senha" [ref=e2]
+      `,
+      credentialUsage: { username: true, password: true },
+      submitted: true,
+    }),
+    false
+  );
+  assert.equal(
+    authenticationObservationState(`
+      ### Page
+      - Page URL: https://cliente.local/mfa
+      - textbox "Código de verificação" [ref=e9]
+    `).hasAdditionalChallenge,
+    true
+  );
+});
+
+test('identifica clique e Enter como envio do formulário de login', () => {
+  assert.equal(
+    isLoginSubmission('browser_click', { element: 'Botão Entrar', target: 'e3' }, 'Entrar'),
+    true
+  );
+  assert.equal(isLoginSubmission('browser_press_key', { key: 'Enter' }), true);
+  assert.equal(isLoginSubmission('browser_click', { element: 'Mostrar senha' }), false);
 });

@@ -2,7 +2,6 @@ import { PROVIDERS, extractJSON } from './aiProviders.js';
 
 const ALLOWED_TOOLS = new Set([
   'browser_navigate',
-  'browser_snapshot',
   'browser_click',
   'browser_type',
   'browser_fill_form',
@@ -121,7 +120,12 @@ export async function decideAutomationAction({
       ? `FASE ATUAL: AUTENTICAÇÃO.
 Antes de qualquer cenário, autentique no sistema usando {{USERNAME}} no campo de usuário/login e {{PASSWORD}} no campo de senha.
 Localize os campos no snapshot, preencha-os, acione Entrar/Acessar e só retorne status passed depois de observar que a tela autenticada foi carregada.
-Nesta fase não execute ainda os passos funcionais do BDD.`
+Nesta fase não execute ainda os passos funcionais do BDD.
+O Runner já envia um snapshot atualizado depois de cada ação: não solicite browser_snapshot.
+Depois de acionar Entrar/Acessar, examine imediatamente a nova URL e o novo snapshot.
+Se os campos de login desaparecerem e a tela interna for exibida, finalize com status passed.
+Se uma mensagem de credencial inválida, bloqueio, captcha ou autenticação adicional for exibida, finalize com status blocked e descreva objetivamente o impedimento.
+Não repita uma ação que já aparece como concluída no histórico.`
       : 'FASE ATUAL: EXECUÇÃO DO CENÁRIO FUNCIONAL. A sessão já foi autenticada; não tente preencher credenciais novamente.',
     `URL base autorizada: ${run.target.baseUrl}`,
     `URL inicial de login: ${run.target.loginUrl}`,

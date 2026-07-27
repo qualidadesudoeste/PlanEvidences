@@ -3,6 +3,9 @@ dist/
 .DS_Store
 *.log
 runner/logs/
+runner/.package/
+downloads/*
+!downloads/.gitkeep
 
 # Generated/uploaded files
 uploads/*

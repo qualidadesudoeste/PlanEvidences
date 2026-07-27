@@ -90,18 +90,31 @@ que o lote foi recebido e fecha automaticamente quando a execução começa.
 
 ### Instalar em cada computador de QA
 
-O Runner Local não deve ser instalado no servidor. Em cada computador que executará
-os testes:
+O QA não precisa clonar o projeto nem instalar Node, npm ou Git. Na janela
+**Execução automatizada**, clique em **Instalar Runner**, extraia o ZIP baixado e
+dê dois cliques em `Instalar Runner.cmd`.
+
+O pacote já contém Node, dependências e o **Chrome for Testing** compatível com a
+versão fixada do Playwright MCP. Ele instala tudo em
+`%LOCALAPPDATA%\PlanEvidencesRunner`, inicia o Runner em segundo plano e cria um
+atalho na inicialização do usuário. Não exige permissão de administrador e, depois
+disso, o Runner inicia automaticamente com o Windows.
+
+Para gerar ou atualizar o ZIP no servidor do PlanEvidences:
 
 ```powershell
-cd C:\caminho\PlanEvidences
-.\runner\install.ps1
+cd C:\sig\PlanEvidences
+.\runner\build-portable.ps1 -PlanEvidencesUrl http://136.248.115.65:4500
 ```
 
-O instalador baixa as dependências e o **Chrome for Testing** compatível com a versão
-fixada do Playwright MCP, inicia o Runner em segundo plano e cria um atalho na pasta
-de inicialização do usuário. Depois da instalação não é necessário abrir terminal:
-o Runner inicia automaticamente com o Windows.
+O arquivo final é criado em
+`downloads\PlanEvidencesRunner-Windows.zip` e passa a ser servido automaticamente
+em `/downloads/PlanEvidencesRunner-Windows.zip`. A geração precisa de acesso à
+internet uma única vez para baixar a versão fixada do navegador. Os computadores
+dos QAs não precisam acessar npm, GitHub ou os servidores do Playwright.
+
+O script `runner\install.ps1` continua disponível somente para desenvolvimento,
+quando o repositório já está presente no computador.
 
 No `runner\.env`, configure a mesma origem usada no navegador, sem barra final:
 
@@ -120,7 +133,10 @@ evitar concorrência destrutiva no mesmo ambiente.
 Antes do primeiro cenário, o agente executa uma fase exclusiva de autenticação:
 localiza os campos de usuário e senha pelo snapshot de acessibilidade, preenche os
 marcadores protegidos e confirma que a tela autenticada foi carregada. A mesma sessão
-é reutilizada nos demais cards e cenários do lote.
+é reutilizada nos demais cards e cenários do lote. O Runner também confirma localmente
+o desaparecimento do formulário de login, evitando ciclos da IA. Credencial recusada,
+captcha, MFA e ausência de progresso geram mensagem específica, print e diagnóstico
+técnico no primeiro cenário bloqueado.
 
 As capturas de falha são armazenadas em
 `automation/<usuario>/<execucao>/<cenario>/` e podem ser anexadas diretamente à
@@ -241,6 +257,9 @@ cd C:\sig\PlanEvidences
 
 # Como Administrator (pra reiniciar o serviço)
 .\deploy\update.ps1 -RestartService
+
+# Atualiza e também gera o ZIP offline usado pelo botão "Instalar Runner"
+.\deploy\update.ps1 -RestartService -BuildRunnerPackage
 
 # Sem admin: o script faz git pull + rebuild, e você reinicia depois com nssm
 .\deploy\update.ps1

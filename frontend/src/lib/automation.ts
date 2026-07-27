@@ -4,6 +4,9 @@ const RUNNER_URL = (
   import.meta.env.VITE_AUTOMATION_RUNNER_URL || 'http://127.0.0.1:4317'
 ).replace(/\/+$/, '');
 const RUNNER_WINDOW_NAME = 'planevidences_local_runner';
+export const LOCAL_RUNNER_DOWNLOAD_URL =
+  import.meta.env.VITE_AUTOMATION_RUNNER_DOWNLOAD_URL ||
+  '/downloads/PlanEvidencesRunner-Windows.zip';
 
 interface ApiResponse {
   ok?: boolean;

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
 import { McpBrowser } from './mcpBrowser.js';
 
-const RUNNER_VERSION = '0.1.0';
+const RUNNER_VERSION = '0.1.1';
 
 function apiHeaders(token, json = false) {
   return {
@@ -126,6 +126,74 @@ function expectedFromBdd(bdd) {
 function finalUrlFromObservation(observation) {
   const match = String(observation || '').match(/(?:Page URL|URL da página):\s*(https?:\/\/\S+)/i);
   return match?.[1] || '';
+}
+
+function normalizedObservation(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
+export function authenticationObservationState(observation) {
+  const normalized = normalizedObservation(observation);
+  const textboxes = [
+    ...normalized.matchAll(/textbox\s+["']([^"']+)["'][^\n]*/g),
+  ].map((match) => match[1]);
+  const hasPasswordField =
+    textboxes.some((name) => /\b(senha|password|passcode|pwd)\b/.test(name)) ||
+    /\btype\s*=\s*["']?password\b/.test(normalized);
+  const hasUsernameField = textboxes.some((name) =>
+    /\b(usuario|user(?:name)?|login|e-?mail|cpf|matricula|identificador)\b/.test(name)
+  );
+  const hasLoginButton =
+    /button\s+["'][^"']*\b(entrar|acessar|login|sign in|continuar)\b[^"']*["']/.test(
+      normalized
+    );
+  const hasAdditionalChallenge =
+    textboxes.some((name) =>
+      /\b(codigo|token|otp|verificacao|autenticacao|mfa|captcha)\b/.test(name)
+    ) ||
+    /\b(captcha|autenticacao em dois fatores|two-factor|verification code)\b/.test(
+      normalized
+    );
+  const hasLoginError =
+    /\b(usuario ou senha invalido|credenciais invalidas|senha incorreta|acesso negado|login invalido|invalid credentials|incorrect password)\b/.test(
+      normalized
+    );
+  return {
+    currentUrl: finalUrlFromObservation(observation),
+    hasPasswordField,
+    hasUsernameField,
+    hasLoginButton,
+    hasAdditionalChallenge,
+    hasLoginError,
+    loginFormVisible: hasPasswordField && (hasUsernameField || hasLoginButton),
+  };
+}
+
+export function isLoginSubmission(tool, args, step = '') {
+  if (
+    tool === 'browser_press_key' &&
+    /\benter\b/i.test(String(args?.key || args?.text || ''))
+  ) {
+    return true;
+  }
+  if (tool !== 'browser_click') return false;
+  const descriptor = normalizedObservation(
+    `${step} ${args?.element || ''} ${args?.name || ''} ${args?.target || ''}`
+  );
+  return /\b(entrar|acessar|login|sign in|continuar|autenticar)\b/.test(descriptor);
+}
+
+export function authenticationSucceeded({ observation, credentialUsage, submitted }) {
+  if (!credentialUsage?.username || !credentialUsage?.password || !submitted) return false;
+  const state = authenticationObservationState(observation);
+  return (
+    !state.hasPasswordField &&
+    !state.hasAdditionalChallenge &&
+    !state.hasLoginError
+  );
 }
 
 export function ensureObservationOrigin(observation, allowedOrigins) {
@@ -257,9 +325,20 @@ async function collectFailureDiagnostics(browser, secrets) {
   return diagnostics;
 }
 
+function authenticationError(message, code, details = {}) {
+  const error = new Error(message);
+  error.code = code;
+  Object.assign(error, details);
+  return error;
+}
+
 async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
   const history = [];
   const credentialUsage = { username: false, password: false };
+  let submitted = false;
+  let repeatedActionCount = 0;
+  let previousActionSignature = '';
+  let lastStep = 'Abrir a tela de login';
   let observation = await currentBrowserObservation(
     browser,
     secrets,
@@ -299,13 +378,44 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
         });
         return;
       }
-      throw new Error(
+      throw authenticationError(
         decision.actualResult ||
           decision.summary ||
-          'Não foi possível autenticar no sistema testado.'
+          'Não foi possível autenticar no sistema testado.',
+        'AUTOMATION_LOGIN_BLOCKED',
+        { observation, lastStep: decision.lastStep || lastStep }
       );
     }
 
+    lastStep = decision.step || decision.tool;
+    const protectedArgs = safeHistoryArguments(decision.arguments);
+    const actionSignature = JSON.stringify({
+      tool: decision.tool,
+      arguments: protectedArgs,
+    });
+    repeatedActionCount =
+      actionSignature === previousActionSignature ? repeatedActionCount + 1 : 0;
+    previousActionSignature = actionSignature;
+    if (repeatedActionCount >= 2) {
+      throw authenticationError(
+        `A autenticação não avançou após repetir a ação "${lastStep}". Verifique se a tela exige captcha, código adicional ou uma forma diferente de acesso.`,
+        'AUTOMATION_LOGIN_NO_PROGRESS',
+        { observation, lastStep }
+      );
+    }
+
+    await updateRun(job, {
+      current: {
+        cardCode: '',
+        scenarioId,
+        scenarioCode: '',
+        step: `Login: ${lastStep}`,
+      },
+      event: {
+        level: 'info',
+        message: `Login — ${lastStep}`,
+      },
+    });
     ensureAllowedNavigation(decision.tool, decision.arguments, job.allowedOrigins);
     const secretPlacement = validateSecretPlacement({
       tool: decision.tool,
@@ -314,7 +424,6 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
       loginUrl: job.run.target.loginUrl,
       usage: credentialUsage,
     });
-    const protectedArgs = safeHistoryArguments(decision.arguments);
     const actualArgs = substituteSecrets(decision.arguments, secrets);
     let toolResult;
     try {
@@ -332,6 +441,7 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
     }
     if (secretPlacement.usesUsername) credentialUsage.username = true;
     if (secretPlacement.usesPassword) credentialUsage.password = true;
+    if (isLoginSubmission(decision.tool, decision.arguments, lastStep)) submitted = true;
     observation = await currentBrowserObservation(browser, secrets, toolResult);
     ensureObservationOrigin(observation, job.allowedOrigins);
     history.push({
@@ -340,8 +450,37 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
       arguments: protectedArgs,
       result: observation.slice(-4_000),
     });
+
+    const loginState = authenticationObservationState(observation);
+    if (submitted && loginState.hasAdditionalChallenge) {
+      throw authenticationError(
+        'O sistema solicitou captcha, código de verificação ou autenticação adicional. Essa etapa precisa ser concluída pelo QA.',
+        'AUTOMATION_LOGIN_ADDITIONAL_CHALLENGE',
+        { observation, lastStep }
+      );
+    }
+    if (submitted && loginState.hasLoginError) {
+      throw authenticationError(
+        'O sistema recusou as credenciais informadas. Confirme o usuário e a senha do ambiente testado.',
+        'AUTOMATION_LOGIN_REJECTED',
+        { observation, lastStep }
+      );
+    }
+    if (authenticationSucceeded({ observation, credentialUsage, submitted })) {
+      await updateRun(job, {
+        event: {
+          level: 'success',
+          message: 'Autenticação confirmada pelo desaparecimento do formulário de login.',
+        },
+      });
+      return;
+    }
   }
-  throw new Error('O agente atingiu o limite de ações durante a autenticação.');
+  throw authenticationError(
+    `A autenticação não foi confirmada após 15 ações. Última ação: ${lastStep}.`,
+    'AUTOMATION_LOGIN_LIMIT',
+    { observation, lastStep }
+  );
 }
 
 async function runScenario({ browser, job, card, scenario, secrets, outputDir, maxSteps }) {
@@ -558,6 +697,8 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
     allowedOrigins: job.allowedOrigins,
     headless: String(process.env.RUNNER_HEADLESS || '').toLowerCase() === 'true',
   });
+  const firstCard = initial.cards.find((card) => card.scenarios.length > 0);
+  const firstScenario = firstCard?.scenarios[0];
 
   try {
     onLocalUpdate({ status: 'starting', message: 'Iniciando Playwright MCP...' });
@@ -567,7 +708,6 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
     }
     const maxSteps = Math.max(10, Math.min(60, Number(process.env.RUNNER_MAX_STEPS) || 35));
     let cancelled = false;
-    const firstScenario = initial.cards.flatMap((card) => card.scenarios)[0];
     if (!firstScenario) throw new Error('O lote não possui cenários para execução.');
     onLocalUpdate({ status: 'starting', message: 'Autenticando no sistema...' });
     await authenticateBrowser({
@@ -624,11 +764,46 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
     });
     onLocalUpdate({ status: cancelled ? 'cancelled' : 'completed' });
   } catch (error) {
+    const safeError = redactSecrets(error.message, secrets);
+    if (String(error.code || '').startsWith('AUTOMATION_LOGIN_') && firstCard && firstScenario) {
+      const evidence = await captureFailureEvidence(
+        browser,
+        job,
+        firstScenario,
+        outputDir
+      ).catch(() => []);
+      const diagnostics = await collectFailureDiagnostics(browser, secrets).catch(() => ({
+        console: '',
+        network: '',
+      }));
+      await updateRun(job, {
+        result: {
+          cardCode: firstCard.code,
+          scenarioId: firstScenario.id,
+          scenarioCode: firstScenario.code,
+          title: firstScenario.title,
+          status: 'blocked',
+          summary: safeError,
+          lastStep: error.lastStep || 'Autenticação no sistema testado',
+          actualResult: 'O Runner não conseguiu confirmar uma sessão autenticada.',
+          expectedResult: 'O sistema deveria permitir o acesso com a conta informada.',
+          finalUrl: finalUrlFromObservation(error.observation || ''),
+          evidence,
+          diagnostics,
+          startedAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+        },
+        event: {
+          level: 'error',
+          message: `Autenticação interrompida: ${safeError}`,
+        },
+      }).catch(() => {});
+    }
     await updateRun(job, {
       status: 'failed',
-      event: { level: 'error', message: `Runner interrompido: ${error.message}` },
+      event: { level: 'error', message: `Runner interrompido: ${safeError}` },
     }).catch(() => {});
-    onLocalUpdate({ status: 'failed', error: error.message });
+    onLocalUpdate({ status: 'failed', error: safeError });
     throw error;
   } finally {
     secrets = null;

@@ -987,6 +987,14 @@ select:focus {
   font-size: 12px;
 }
 
+.automation-runner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .automation-config-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1185,6 +1193,12 @@ select:focus {
   margin-top: 3px;
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+.automation-waiting-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .automation-reconnect-fields {
@@ -2152,7 +2166,11 @@ select:focus {
   .automation-result-row { align-items: stretch; flex-direction: column; }
   .automation-scenario-options { padding-left: 18px; }
   .automation-waiting-runner { grid-template-columns: auto 1fr; }
-  .automation-waiting-runner > .btn { grid-column: 1 / -1; }
+  .automation-waiting-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
   .automation-modal-actions {
     bottom: -16px;
     margin: 20px -16px -16px;

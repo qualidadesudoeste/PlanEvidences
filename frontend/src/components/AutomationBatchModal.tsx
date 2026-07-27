@@ -4,6 +4,7 @@ import {
   Bot,
   CheckCircle2,
   CircleStop,
+  Download,
   ExternalLink,
   Loader2,
   MonitorCog,
@@ -20,6 +21,7 @@ import {
   createAutomationRun,
   forgetRunnerToken,
   getAutomationRun,
+  LOCAL_RUNNER_DOWNLOAD_URL,
   openLocalRunnerStatus,
   prepareLocalRunnerWindow,
   startLocalAutomationRunner,
@@ -299,10 +301,20 @@ export function AutomationBatchModal({
                   </span>
                 </div>
               </div>
-              <Button variant="secondary" size="sm" onClick={openLocalRunnerStatus}>
-                <ExternalLink size={14} />
-                Abrir Runner
-              </Button>
+              <div className="automation-runner-actions">
+                <a
+                  className="btn btn-secondary btn-sm"
+                  href={LOCAL_RUNNER_DOWNLOAD_URL}
+                  download
+                >
+                  <Download size={14} />
+                  Instalar Runner
+                </a>
+                <Button variant="secondary" size="sm" onClick={openLocalRunnerStatus}>
+                  <ExternalLink size={14} />
+                  Abrir Runner
+                </Button>
+              </div>
             </section>
 
             <div className="automation-config-grid">
@@ -428,6 +440,8 @@ export function AutomationBatchModal({
                 <div>
                   {run.status === 'running' ? (
                     <Loader2 size={22} className="spin" />
+                  ) : run.status === 'failed' ? (
+                    <AlertCircle size={22} />
                   ) : terminal ? (
                     <CheckCircle2 size={22} />
                   ) : (
@@ -495,10 +509,20 @@ export function AutomationBatchModal({
                     </div>
                   </div>
                 </div>
-                <Button onClick={() => void retryRunner()} disabled={starting}>
-                  {starting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}
-                  Conectar e executar
-                </Button>
+                <div className="automation-waiting-actions">
+                  <Button onClick={() => void retryRunner()} disabled={starting}>
+                    {starting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}
+                    Conectar e executar
+                  </Button>
+                  <a
+                    className="btn btn-secondary btn-sm"
+                    href={LOCAL_RUNNER_DOWNLOAD_URL}
+                    download
+                  >
+                    <Download size={14} />
+                    Instalar Runner
+                  </a>
+                </div>
               </section>
             )}
 

@@ -19,7 +19,16 @@ if ($existing) {
     exit 0
 }
 
-$nodePath = (Get-Command node.exe -ErrorAction Stop).Source
+$bundledNodePath = Join-Path $runnerRoot 'runtime\node.exe'
+$nodePath = if (Test-Path -LiteralPath $bundledNodePath) {
+    $bundledNodePath
+} else {
+    (Get-Command node.exe -ErrorAction Stop).Source
+}
+$bundledBrowsersPath = Join-Path $runnerRoot 'browsers'
+if (Test-Path -LiteralPath $bundledBrowsersPath) {
+    $env:PLAYWRIGHT_BROWSERS_PATH = $bundledBrowsersPath
+}
 $logsPath = Join-Path $runnerRoot 'logs'
 New-Item -ItemType Directory -Path $logsPath -Force | Out-Null
 
