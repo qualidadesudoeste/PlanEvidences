@@ -78,6 +78,7 @@ router.post('/runs/:runId/decision', runnerAuth, async (req, res, next) => {
       observation: req.body.observation,
       history: req.body.history,
       tools: req.body.tools,
+      purpose: req.body.purpose,
     });
     return res.json({ ok: true, decision });
   } catch (error) {

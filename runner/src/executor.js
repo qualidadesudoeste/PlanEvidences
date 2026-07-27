@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
-import { McpBrowser, resultText } from './mcpBrowser.js';
+import { McpBrowser } from './mcpBrowser.js';
 
 const RUNNER_VERSION = '0.1.0';
 
@@ -48,16 +48,28 @@ async function currentRun(job) {
   return data.run;
 }
 
-async function decide(job, scenarioId, observation, history, tools) {
+async function decide(job, scenarioId, observation, history, tools, purpose = 'scenario') {
   const data = await serverRequest(
     job,
     `/api/automation-runner/runs/${job.runId}/decision`,
     {
       method: 'POST',
-      body: JSON.stringify({ scenarioId, observation, history, tools }),
+      body: JSON.stringify({ scenarioId, observation, history, tools, purpose }),
     }
   );
   return data.decision;
+}
+
+async function currentBrowserObservation(browser, secrets, primaryResult = null) {
+  const actionText = redactSecrets(await browser.readResultText(primaryResult), secrets);
+  let snapshotText = '';
+  if (browser.hasTool('browser_snapshot')) {
+    snapshotText = redactSecrets(
+      await browser.readResultText(await browser.call('browser_snapshot')),
+      secrets
+    );
+  }
+  return [actionText, snapshotText].filter(Boolean).join('\n\n').slice(-40_000);
 }
 
 export function substituteSecrets(value, secrets) {
@@ -224,7 +236,7 @@ async function collectFailureDiagnostics(browser, secrets) {
   const diagnostics = { console: '', network: '' };
   if (browser.hasTool('browser_console_messages')) {
     diagnostics.console = redactSecrets(
-      resultText(
+      await browser.readResultText(
         await browser
           .call('browser_console_messages', { level: 'warning', all: false })
           .catch(() => null)
@@ -234,7 +246,7 @@ async function collectFailureDiagnostics(browser, secrets) {
   }
   if (browser.hasTool('browser_network_requests')) {
     diagnostics.network = redactSecrets(
-      resultText(
+      await browser.readResultText(
         await browser
           .call('browser_network_requests', { static: false })
           .catch(() => null)
@@ -245,12 +257,101 @@ async function collectFailureDiagnostics(browser, secrets) {
   return diagnostics;
 }
 
+async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
+  const history = [];
+  const credentialUsage = { username: false, password: false };
+  let observation = await currentBrowserObservation(
+    browser,
+    secrets,
+    await browser.call('browser_navigate', { url: job.run.target.loginUrl })
+  );
+  ensureObservationOrigin(observation, job.allowedOrigins);
+
+  await updateRun(job, {
+    current: {
+      cardCode: '',
+      scenarioId,
+      scenarioCode: '',
+      step: 'Autenticando no sistema testado',
+    },
+    event: {
+      level: 'info',
+      message: 'Realizando autenticação antes de iniciar os cenários.',
+    },
+  });
+
+  for (let stepNumber = 1; stepNumber <= 15; stepNumber += 1) {
+    const state = await currentRun(job);
+    if (state.cancelRequested) throw new Error('Execução cancelada durante a autenticação.');
+
+    const decision = await decide(
+      job,
+      scenarioId,
+      observation,
+      history,
+      browser.agentTools(),
+      'login'
+    );
+    if (decision.type === 'complete') {
+      if (decision.status === 'passed') {
+        await updateRun(job, {
+          event: { level: 'success', message: 'Autenticação concluída com sucesso.' },
+        });
+        return;
+      }
+      throw new Error(
+        decision.actualResult ||
+          decision.summary ||
+          'Não foi possível autenticar no sistema testado.'
+      );
+    }
+
+    ensureAllowedNavigation(decision.tool, decision.arguments, job.allowedOrigins);
+    const secretPlacement = validateSecretPlacement({
+      tool: decision.tool,
+      args: decision.arguments,
+      observation,
+      loginUrl: job.run.target.loginUrl,
+      usage: credentialUsage,
+    });
+    const protectedArgs = safeHistoryArguments(decision.arguments);
+    const actualArgs = substituteSecrets(decision.arguments, secrets);
+    let toolResult;
+    try {
+      toolResult = await browser.call(decision.tool, actualArgs);
+    } catch (toolError) {
+      const safeToolError = redactSecrets(toolError.message, secrets);
+      history.push({
+        step: stepNumber,
+        tool: decision.tool,
+        arguments: protectedArgs,
+        error: safeToolError.slice(0, 1_000),
+      });
+      observation = `A ferramenta falhou: ${safeToolError}\n\n${observation}`;
+      continue;
+    }
+    if (secretPlacement.usesUsername) credentialUsage.username = true;
+    if (secretPlacement.usesPassword) credentialUsage.password = true;
+    observation = await currentBrowserObservation(browser, secrets, toolResult);
+    ensureObservationOrigin(observation, job.allowedOrigins);
+    history.push({
+      step: stepNumber,
+      tool: decision.tool,
+      arguments: protectedArgs,
+      result: observation.slice(-4_000),
+    });
+  }
+  throw new Error('O agente atingiu o limite de ações durante a autenticação.');
+}
+
 async function runScenario({ browser, job, card, scenario, secrets, outputDir, maxSteps }) {
   const startedAt = new Date().toISOString();
   const history = [];
   let observation = '';
   let lastStep = 'Abrir o sistema';
-  const credentialUsage = { username: false, password: false };
+  // A autenticação é feita uma única vez antes do lote. Credenciais não podem
+  // ser reutilizadas durante a navegação funcional dos cenários.
+  const credentialUsage = { username: true, password: true };
 
   await updateRun(job, {
     current: {
@@ -266,12 +367,11 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
   });
 
   try {
-    observation = redactSecrets(resultText(
-      await browser.call('browser_navigate', { url: job.run.target.loginUrl })
-    ), secrets);
-    if (!observation && browser.hasTool('browser_snapshot')) {
-      observation = redactSecrets(resultText(await browser.call('browser_snapshot')), secrets);
-    }
+    observation = await currentBrowserObservation(
+      browser,
+      secrets,
+      await browser.call('browser_navigate', { url: job.run.target.baseUrl })
+    );
     ensureObservationOrigin(observation, job.allowedOrigins);
 
     for (let stepNumber = 1; stepNumber <= maxSteps; stepNumber += 1) {
@@ -362,13 +462,7 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
       }
       if (secretPlacement.usesUsername) credentialUsage.username = true;
       if (secretPlacement.usesPassword) credentialUsage.password = true;
-      observation = redactSecrets(resultText(toolResult), secrets);
-      if (!observation && browser.hasTool('browser_snapshot')) {
-        observation = redactSecrets(
-          resultText(await browser.call('browser_snapshot')),
-          secrets
-        );
-      }
+      observation = await currentBrowserObservation(browser, secrets, toolResult);
       ensureObservationOrigin(observation, job.allowedOrigins);
       history.push({
         step: stepNumber,
@@ -473,6 +567,15 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
     }
     const maxSteps = Math.max(10, Math.min(60, Number(process.env.RUNNER_MAX_STEPS) || 35));
     let cancelled = false;
+    const firstScenario = initial.cards.flatMap((card) => card.scenarios)[0];
+    if (!firstScenario) throw new Error('O lote não possui cenários para execução.');
+    onLocalUpdate({ status: 'starting', message: 'Autenticando no sistema...' });
+    await authenticateBrowser({
+      browser,
+      job,
+      scenarioId: firstScenario.id,
+      secrets,
+    });
 
     for (const card of initial.cards) {
       for (const scenario of card.scenarios) {

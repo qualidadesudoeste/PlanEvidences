@@ -86,7 +86,7 @@ Ao iniciar, o PlanEvidences abre uma aba do Runner Local e envia os dados por um
 navegação POST de nível superior. Não é usado `fetch` entre o IP público/HTTP e
 `127.0.0.1`; isso mantém compatibilidade com as restrições de Local Network Access
 adotadas pelo Chrome 142+ sem exigir HTTPS no ambiente interno. A aba local mostra
-o card e o cenário em execução e pode permanecer aberta durante o lote.
+que o lote foi recebido e fecha automaticamente quando a execução começa.
 
 ### Instalar em cada computador de QA
 
@@ -96,32 +96,31 @@ os testes:
 ```powershell
 cd C:\caminho\PlanEvidences
 .\runner\install.ps1
-notepad runner\.env
 ```
 
 O instalador baixa as dependências e o **Chrome for Testing** compatível com a versão
-fixada do Playwright MCP.
+fixada do Playwright MCP, inicia o Runner em segundo plano e cria um atalho na pasta
+de inicialização do usuário. Depois da instalação não é necessário abrir terminal:
+o Runner inicia automaticamente com o Windows.
 
 No `runner\.env`, configure a mesma origem usada no navegador, sem barra final:
 
 ```env
-PLAN_EVIDENCES_URL=http://IP-DO-SERVIDOR:4500
+PLAN_EVIDENCES_URL=http://136.248.115.65:4500
 RUNNER_PORT=4317
-RUNNER_HEADLESS=false
+RUNNER_HEADLESS=true
 RUNNER_MAX_STEPS=35
 ```
 
-Para iniciar:
-
-```powershell
-cd runner
-npm start
-```
-
-O navegador visível é o padrão para o QA acompanhar a execução. Use
-`RUNNER_HEADLESS=true` somente quando não for necessário observar a interface.
+O navegador de teste roda invisível. Para diagnóstico temporário, altere
+`RUNNER_HEADLESS=false` e reinicie o Runner.
 Cada lote aceita até 30 cards e 150 cenários e é executado sequencialmente para
 evitar concorrência destrutiva no mesmo ambiente.
+
+Antes do primeiro cenário, o agente executa uma fase exclusiva de autenticação:
+localiza os campos de usuário e senha pelo snapshot de acessibilidade, preenche os
+marcadores protegidos e confirma que a tela autenticada foi carregada. A mesma sessão
+é reutilizada nos demais cards e cenários do lote.
 
 As capturas de falha são armazenadas em
 `automation/<usuario>/<execucao>/<cenario>/` e podem ser anexadas diretamente à

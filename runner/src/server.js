@@ -97,6 +97,10 @@ function statusPage({ title, message, runId = '', isError = false }) {
           if (!response.ok) throw new Error(data.error || 'Execução não encontrada.');
           const run = data.run;
           state.textContent = [labels[run.status] || run.status, run.cardCode, run.scenarioCode, run.message || run.error].filter(Boolean).join(' • ');
+          if (['starting', 'running'].includes(run.status)) {
+            setTimeout(() => window.close(), 700);
+            return;
+          }
           if (!['completed', 'cancelled', 'failed'].includes(run.status)) setTimeout(poll, 1000);
         } catch (error) {
           state.textContent = error.message;

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
@@ -34,6 +34,12 @@ export class McpBrowser {
       'chromium',
       '--output-dir',
       this.outputDir,
+      '--output-mode',
+      'stdout',
+      '--snapshot-mode',
+      'full',
+      '--image-responses',
+      'omit',
       '--ignore-https-errors',
     ];
     if (this.headless) args.push('--headless');
@@ -71,6 +77,25 @@ export class McpBrowser {
       description: tool.description,
       inputSchema: tool.inputSchema,
     }));
+  }
+
+  async readResultText(result) {
+    const raw = resultText(result);
+    const artifacts = [];
+    const links = raw.matchAll(/\]\(\.\/([^)#]+)(?:#[^)]+)?\)/g);
+    const outputRoot = `${path.resolve(this.outputDir)}${path.sep}`;
+    for (const match of links) {
+      const relativePath = String(match[1] || '').replaceAll('/', path.sep);
+      const resolved = path.resolve(this.outputDir, relativePath);
+      if (!resolved.startsWith(outputRoot)) continue;
+      if (!/\.(?:ya?ml|md|log|txt)$/i.test(resolved)) continue;
+      try {
+        artifacts.push(await readFile(resolved, 'utf8'));
+      } catch {
+        // O resultado original continua disponível mesmo sem o artefato.
+      }
+    }
+    return [raw, ...artifacts].filter(Boolean).join('\n\n').slice(-40_000);
   }
 
   async call(name, args = {}) {

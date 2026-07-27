@@ -217,7 +217,7 @@ export function AutomationBatchModal({
       toast({
         variant: 'success',
         title: 'Lote preparado para o Runner Local',
-        description: `${created.run.totalScenarios} cenário(s). Acompanhe também a aba local que foi aberta.`,
+        description: `${created.run.totalScenarios} cenário(s) serão executados em segundo plano.`,
       });
     } catch (startError) {
       runnerWindow.close();
@@ -295,7 +295,7 @@ export function AutomationBatchModal({
                 <div>
                   <strong>Runner Local</strong>
                   <span>
-                    Deve estar iniciado neste computador. A execução será acompanhada em uma aba local.
+                    Inicia automaticamente com o Windows e executa o navegador em segundo plano.
                   </span>
                 </div>
               </div>
@@ -455,7 +455,13 @@ export function AutomationBatchModal({
               />
               {run.current && (
                 <p className="automation-current-step">
-                  <strong>#{run.current.cardCode} • {run.current.scenarioCode}</strong>
+                  {(run.current.cardCode || run.current.scenarioCode) && (
+                    <strong>
+                      {run.current.cardCode ? `#${run.current.cardCode}` : ''}
+                      {run.current.cardCode && run.current.scenarioCode ? ' • ' : ''}
+                      {run.current.scenarioCode}
+                    </strong>
+                  )}
                   {run.current.step}
                 </p>
               )}

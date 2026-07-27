@@ -101,7 +101,9 @@ export async function decideAutomationAction({
   observation,
   history,
   tools,
+  purpose,
 }) {
+  const loginMode = purpose === 'login';
   const availableTools = (Array.isArray(tools) ? tools : [])
     .filter((tool) => ALLOWED_TOOLS.has(tool?.name))
     .map(compactTool);
@@ -115,16 +117,26 @@ export async function decideAutomationAction({
   const provider = configuredProvider();
   const providerFn = PROVIDERS[provider.name];
   const userPrompt = [
+    loginMode
+      ? `FASE ATUAL: AUTENTICAÇÃO.
+Antes de qualquer cenário, autentique no sistema usando {{USERNAME}} no campo de usuário/login e {{PASSWORD}} no campo de senha.
+Localize os campos no snapshot, preencha-os, acione Entrar/Acessar e só retorne status passed depois de observar que a tela autenticada foi carregada.
+Nesta fase não execute ainda os passos funcionais do BDD.`
+      : 'FASE ATUAL: EXECUÇÃO DO CENÁRIO FUNCIONAL. A sessão já foi autenticada; não tente preencher credenciais novamente.',
     `URL base autorizada: ${run.target.baseUrl}`,
     `URL inicial de login: ${run.target.loginUrl}`,
-    `Card: #${scenario.cardCode} — ${scenario.cardTitle}`,
-    `Cenário: ${scenario.code} — ${scenario.title}`,
-    `BDD:\n${scenario.bdd}`,
-    `Caminho funcional informado: ${scenario.path || 'Não informado'}`,
+    !loginMode ? `Card: #${scenario.cardCode} — ${scenario.cardTitle}` : null,
+    !loginMode ? `Cenário: ${scenario.code} — ${scenario.title}` : null,
+    !loginMode ? `BDD:\n${scenario.bdd}` : null,
+    !loginMode
+      ? `Caminho funcional informado: ${scenario.path || 'Não informado'}`
+      : null,
     `Ferramentas disponíveis:\n${JSON.stringify(availableTools)}`,
     `Histórico recente:\n${JSON.stringify(Array.isArray(history) ? history.slice(-12) : [])}`,
     `Snapshot/observação atual:\n${String(observation || '').slice(-30_000)}`,
-  ].join('\n\n');
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 
   const result = await providerFn({
     apiKey: provider.key,
