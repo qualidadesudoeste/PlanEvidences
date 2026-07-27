@@ -4,6 +4,7 @@ import {
   authenticateSigUser,
   buildCorrectivePayload,
   buildSigDescriptionHtml,
+  normalizedCorrectiveAttachments,
   publishCorrectiveCard,
   refreshSigUserSession,
   resolveCorrectiveLookups,
@@ -171,6 +172,37 @@ test('envia o print como anexo real do card no endpoint multipart do SIG', async
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+test('aceita somente o print automatizado do mesmo usuário, execução e cenário', () => {
+  const selected = normalizedCorrectiveAttachments(
+    {
+      automationRunId: 'run-12345678',
+      scenarioId: 'scenario-abc',
+      correctiveAttachments: [
+        {
+          key: 'automation/42/run-12345678/scenario-abc/falha.png',
+          originalName: 'falha.png',
+          mimeType: 'image/png',
+        },
+        {
+          key: 'automation/99/run-12345678/scenario-abc/outro-usuario.png',
+          originalName: 'outro-usuario.png',
+          mimeType: 'image/png',
+        },
+        {
+          key: 'automation/42/outra-run/scenario-abc/outra-run.png',
+          originalName: 'outra-run.png',
+          mimeType: 'image/png',
+        },
+      ],
+    },
+    '42',
+    'request-123'
+  );
+
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].key, 'automation/42/run-12345678/scenario-abc/falha.png');
 });
 
 test('publica com o token do usuário conectado sem depender de nomes de projeto ou sprint', async () => {

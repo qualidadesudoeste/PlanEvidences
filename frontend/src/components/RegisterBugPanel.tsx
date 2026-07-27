@@ -31,10 +31,20 @@ import type {
 interface Props {
   open: boolean;
   context: CorrectiveCardContext;
+  initialErrorDescription?: string;
+  initialAttachments?: CorrectiveAttachment[];
   onClose: () => void;
 }
 
-export function RegisterBugModal({ open, context, onClose }: Props) {
+const EMPTY_ATTACHMENTS: CorrectiveAttachment[] = [];
+
+export function RegisterBugModal({
+  open,
+  context,
+  initialErrorDescription = '',
+  initialAttachments = EMPTY_ATTACHMENTS,
+  onClose,
+}: Props) {
   const { toast } = useToast();
   const [hu, setHu] = useState(context.hu);
   const [screenPath, setScreenPath] = useState(context.screenPath);
@@ -56,10 +66,10 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
     setHu(context.hu);
     setScreenPath(context.screenPath);
     setScreenUrl(context.screenUrl || '');
-    setErrorDescription('');
+    setErrorDescription(initialErrorDescription);
     setCard(null);
     setPublished(null);
-    setAttachments([]);
+    setAttachments(initialAttachments);
     setUploadingAttachments(false);
     setPublicationRequestId(crypto.randomUUID());
   }, [
@@ -69,6 +79,8 @@ export function RegisterBugModal({ open, context, onClose }: Props) {
     context.screenUrl,
     context.scenarioId,
     context.sigCardCode,
+    initialErrorDescription,
+    initialAttachments,
   ]);
 
   useEffect(() => {

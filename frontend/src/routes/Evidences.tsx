@@ -13,6 +13,7 @@ import {
   Check,
   CloudOff,
   ArrowUp,
+  Bot,
 } from 'lucide-react';
 import { Sidebar, type EvidenceView } from '@/components/Sidebar';
 import { ProjectForm } from '@/components/ProjectForm';
@@ -21,6 +22,7 @@ import { HistoryList } from '@/components/HistoryList';
 import { RightPanel } from '@/components/RightPanel';
 import { ImportFromQAModal } from '@/components/ImportFromQAModal';
 import { RegisterBugModal } from '@/components/RegisterBugPanel';
+import { AutomationBatchModal } from '@/components/AutomationBatchModal';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/useToast';
@@ -35,6 +37,7 @@ import { agruparCenariosPorCard, tituloCardParaExibicao, getErrorMessage } from 
 import {
   scenarioCode,
   type CorrectiveCardContext,
+  type AutomationScenarioResult,
   type GeneratedDoc,
   type Project,
   type Scenario,
@@ -284,6 +287,11 @@ export default function Evidences() {
 
   const [view, setView] = useState<EvidenceView>('editor');
   const [bugScenarioId, setBugScenarioId] = useState<string | null>(null);
+  const [automationOpen, setAutomationOpen] = useState(false);
+  const [automationFailure, setAutomationFailure] = useState<{
+    result: AutomationScenarioResult;
+    runId: string;
+  } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -302,10 +310,14 @@ export default function Evidences() {
     const index = bugScenario
       ? project.scenarios.findIndex((scenario) => scenario.id === bugScenario.id)
       : -1;
+    const automated =
+      automationFailure?.result.scenarioId === bugScenario?.id ? automationFailure : null;
     return {
       hu: extractHuFromCard(bugScenario?.cardResumo, bugScenario?.cardCaminho),
       screenPath: bugScenario?.cardCaminho || '',
-      screenUrl: extractUrlFromScenario(bugScenario?.evidence, bugScenario?.bdd),
+      screenUrl:
+        automated?.result.finalUrl ||
+        extractUrlFromScenario(bugScenario?.evidence, bugScenario?.bdd),
       sigCardCode: bugScenario?.cardCodigo || null,
       projectName: project.projectName || null,
       sprintName: project.sprintName || null,
@@ -317,15 +329,31 @@ export default function Evidences() {
       scenarioBdd: bugScenario?.bdd || null,
       evidenceDescription: bugScenario?.evidence || null,
       caseId: bugScenario?.caseId || null,
+      automationRunId: automated?.runId || null,
     };
   }, [
     bugScenario,
+    automationFailure,
     evidenceId,
     project.projectName,
     project.qaPlanId,
     project.scenarios,
     project.sprintName,
   ]);
+
+  const automatedBugDescription = useMemo(() => {
+    if (!automationFailure || automationFailure.result.scenarioId !== bugScenario?.id) return '';
+    const result = automationFailure.result;
+    return [
+      `Falha identificada durante a execução automatizada do cenário ${result.scenarioCode} — ${result.title}.`,
+      result.lastStep ? `Último passo executado: ${result.lastStep}` : '',
+      result.actualResult ? `Resultado atual: ${result.actualResult}` : '',
+      result.expectedResult ? `Resultado esperado: ${result.expectedResult}` : '',
+      result.summary ? `Resumo técnico: ${result.summary}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+  }, [automationFailure, bugScenario?.id]);
 
   // Sincroniza ID na URL e no localStorage
   useEffect(() => {
@@ -1054,12 +1082,33 @@ export default function Evidences() {
         onImport={handleImportFromQA}
       />
 
+      <AutomationBatchModal
+        open={automationOpen}
+        project={project}
+        evidenceProjectId={evidenceId}
+        onClose={() => setAutomationOpen(false)}
+        onCreateCorrective={(result, runId) => {
+          setAutomationFailure({ result, runId });
+          setBugScenarioId(result.scenarioId);
+          setAutomationOpen(false);
+        }}
+      />
+
       {bugScenario && (
         <RegisterBugModal
-          key={bugScenario.id}
+          key={`${bugScenario.id}:${automationFailure?.runId || 'manual'}`}
           open
           context={bugContext}
-          onClose={() => setBugScenarioId(null)}
+          initialErrorDescription={automatedBugDescription}
+          initialAttachments={
+            automationFailure?.result.scenarioId === bugScenario.id
+              ? automationFailure.result.evidence
+              : undefined
+          }
+          onClose={() => {
+            setBugScenarioId(null);
+            setAutomationFailure(null);
+          }}
         />
       )}
 
@@ -1090,6 +1139,14 @@ export default function Evidences() {
                   />
                   <Button variant="secondary" onClick={addScenario}>
                     <Plus size={16} /> Novo Cenário
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setAutomationOpen(true)}
+                    disabled={!project.scenarios.some((scenario) => Boolean(scenario.cardCodigo))}
+                    title="Selecionar cards e cenários para execução pelo Runner Local"
+                  >
+                    <Bot size={16} /> Automatizar testes
                   </Button>
                   <Button
                     variant="secondary"

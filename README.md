@@ -6,7 +6,8 @@ QA Suite unificada — gerador de casos de teste a partir de HU (com IA) **+** e
 ┌─────────────────────────────────────────────────────────────┐
 │  /qa          Gerador de Casos (cola HU → IA → BDD)         │
 │  /evidences   Editor de Evidências (anexa prints → PDF)     │
-│  /api/*       Express (LaTeX, upload S3, proxy IA)          │
+│  /api/*       Express (LaTeX, upload S3, IA e orquestração) │
+│  /runner      Runner Local (Playwright MCP no computador QA)│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -20,12 +21,14 @@ QA Suite unificada — gerador de casos de teste a partir de HU (com IA) **+** e
 | Banco | Supabase (planos, execuções, falhas) — opcional pro gerador básico |
 | Storage | S3-compatível (Supabase Storage / R2 / MinIO) — só pras evidências |
 | Postgres | Histórico de PDFs gerados — opcional |
+| Automação web | Runner Local + Microsoft Playwright MCP |
 
 ## Estrutura
 
 ```
 /backend         Express + LaTeX (porta 4500) — também serve frontend/dist em prod
 /frontend        React + Vite (dev na 5173, build → frontend/dist)
+/runner          Agente local Playwright MCP (porta loopback 4317)
 /deploy          Scripts PowerShell pro Smart Sig Runner (Windows Server)
 ```
 
@@ -33,7 +36,7 @@ QA Suite unificada — gerador de casos de teste a partir de HU (com IA) **+** e
 
 ## Desenvolvimento local
 
-**Pré-requisitos:** Node 18+, npm, opcional MiKTeX/TeX Live (sem ele, gera só `.tex`).
+**Pré-requisitos:** Node 20+, npm, opcional MiKTeX/TeX Live (sem ele, gera só `.tex`).
 
 ```powershell
 # Terminal 1 — backend
@@ -50,6 +53,80 @@ npm run dev               # http://localhost:5173 (proxy /api → :4500)
 ```
 
 A app abre na `5173` em dev. Em produção é `4500` (mesmo Node servindo o build).
+
+---
+
+## Agente de testes automatizados
+
+O botão **Automatizar testes** aparece no Editor de Evidências quando existem cenários
+associados a cards importados do SIG. A janela permite:
+
+- selecionar vários cards de uma vez;
+- marcar ou desmarcar cenários individualmente dentro de cada card;
+- informar URL do sistema, URL de login e a conta do ambiente testado;
+- acompanhar progresso e resultado de cada cenário;
+- revisar print, console e requisições de rede quando houver falha;
+- abrir **Gerar corretiva** já com a descrição e os prints encontrados pelo agente;
+- publicar a corretiva no SIG usando o fluxo já existente.
+
+### Arquitetura
+
+O backend do PlanEvidences orquestra o lote e usa a IA já configurada para decidir a
+próxima ação. O navegador é controlado pelo pacote oficial `@playwright/mcp` em um
+**Runner Local**, instalado no computador do QA. Dessa forma, o navegador continua
+dentro da VPN do cliente.
+
+Usuário e senha do sistema testado vão diretamente do navegador para
+`127.0.0.1:4317`. Eles não são gravados no PlanEvidences e não são enviados à IA.
+O backend recebe apenas os marcadores `{{USERNAME}}` e `{{PASSWORD}}`; a substituição
+ocorre localmente no instante de preencher o formulário. O runner aceita chamadas
+somente da origem exata configurada em `PLAN_EVIDENCES_URL` e executa um lote por vez.
+
+Ao iniciar, o PlanEvidences abre uma aba do Runner Local e envia os dados por uma
+navegação POST de nível superior. Não é usado `fetch` entre o IP público/HTTP e
+`127.0.0.1`; isso mantém compatibilidade com as restrições de Local Network Access
+adotadas pelo Chrome 142+ sem exigir HTTPS no ambiente interno. A aba local mostra
+o card e o cenário em execução e pode permanecer aberta durante o lote.
+
+### Instalar em cada computador de QA
+
+O Runner Local não deve ser instalado no servidor. Em cada computador que executará
+os testes:
+
+```powershell
+cd C:\caminho\PlanEvidences
+.\runner\install.ps1
+notepad runner\.env
+```
+
+O instalador baixa as dependências e o **Chrome for Testing** compatível com a versão
+fixada do Playwright MCP.
+
+No `runner\.env`, configure a mesma origem usada no navegador, sem barra final:
+
+```env
+PLAN_EVIDENCES_URL=http://IP-DO-SERVIDOR:4500
+RUNNER_PORT=4317
+RUNNER_HEADLESS=false
+RUNNER_MAX_STEPS=35
+```
+
+Para iniciar:
+
+```powershell
+cd runner
+npm start
+```
+
+O navegador visível é o padrão para o QA acompanhar a execução. Use
+`RUNNER_HEADLESS=true` somente quando não for necessário observar a interface.
+Cada lote aceita até 30 cards e 150 cenários e é executado sequencialmente para
+evitar concorrência destrutiva no mesmo ambiente.
+
+As capturas de falha são armazenadas em
+`automation/<usuario>/<execucao>/<cenario>/` e podem ser anexadas diretamente à
+corretiva. Elas continuam separadas das imagens de aprovação do critério BDD e,
+portanto, não entram automaticamente no documento final de evidências.
 
 ---
 
@@ -277,6 +354,12 @@ Storage: crie um bucket público chamado `planevidences` (Storage → New bucket
 | POST | `/api/ai-analyze/bug-card` | Gera card padronizado de corretiva a partir do relato do QA |
 | GET | `/api/sig/status` | Informa se a integração com o SIG está configurada |
 | POST | `/api/sig/correctives` | Publica a corretiva no projeto e sprint do card de melhoria |
+| POST | `/api/automation/runs` | Cria lote com vários cards/cenários |
+| GET | `/api/automation/runs/:id` | Consulta progresso e resultados do lote |
+| POST | `/api/automation/runs/:id/cancel` | Solicita cancelamento |
+| GET/PATCH | `/api/automation-runner/runs/:id` | Canal autenticado do Runner Local |
+| POST | `/api/automation-runner/runs/:id/decision` | Obtém próxima ação do agente |
+| POST | `/api/automation-runner/runs/:id/evidence` | Recebe print de falha |
 | POST | `/api/upload` | Upload de imagem (S3) |
 | POST | `/api/documents` | Compila LaTeX → PDF |
 | GET | `/api/documents` | Lista histórico de documentos gerados |

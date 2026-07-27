@@ -119,7 +119,11 @@ export function CorrectiveAttachmentUploader({
 
   const remove = async (attachment: CorrectiveAttachment) => {
     try {
-      await deleteCorrectiveAttachment(requestId, attachment);
+      // Prints gerados pelo Runner Local pertencem ao histórico da execução.
+      // Remover aqui apenas os desassocia da corretiva; não apaga o histórico.
+      if (!attachment.key.startsWith('automation/')) {
+        await deleteCorrectiveAttachment(requestId, attachment);
+      }
       onChange(attachments.filter((item) => item.id !== attachment.id));
     } catch (error) {
       toast({

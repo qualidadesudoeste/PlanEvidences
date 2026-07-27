@@ -9,6 +9,8 @@ import aiRouter from './routes/ai.js';
 import sigRouter from './routes/sig.js';
 import authRouter from './routes/auth.js';
 import correctiveAttachmentsRouter from './routes/correctiveAttachments.js';
+import automationRouter from './routes/automation.js';
+import automationRunnerRouter from './routes/automationRunner.js';
 import { requireAuth } from './services/authSessions.js';
 import { ensureSchema } from './db.js';
 
@@ -29,6 +31,9 @@ app.use(
 app.use(express.json({ limit: '50mb' }));
 
 app.use('/api/auth', authRouter);
+// O Runner Local usa um token efêmero limitado a uma única execução e não
+// recebe o cookie da sessão web do QA.
+app.use('/api/automation-runner', automationRunnerRouter);
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -36,6 +41,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api', requireAuth);
 app.use('/api/upload', uploadRouter);
 app.use('/api/corrective-attachments', correctiveAttachmentsRouter);
+app.use('/api/automation', automationRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/ai-analyze', aiRouter);
 app.use('/api/sig', sigRouter);

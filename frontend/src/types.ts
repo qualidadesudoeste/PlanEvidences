@@ -73,6 +73,7 @@ export interface CorrectiveCardContext {
   evidenceDescription?: string | null;
   caseId?: string | null;
   correctiveAttachments?: CorrectiveAttachment[];
+  automationRunId?: string | null;
 }
 
 export interface CorrectiveCardDraft {
@@ -115,6 +116,81 @@ export interface PublishedCorrectiveCard {
       error?: string;
     }>;
   };
+}
+
+export type AutomationScenarioStatus =
+  | 'passed'
+  | 'failed'
+  | 'blocked'
+  | 'not_automatable';
+
+export interface AutomationEvidence extends CorrectiveAttachment {
+  type: 'screenshot';
+}
+
+export interface AutomationScenarioResult {
+  cardCode: string;
+  scenarioId: string;
+  scenarioCode: string;
+  title: string;
+  status: AutomationScenarioStatus;
+  summary: string;
+  lastStep: string;
+  actualResult: string;
+  expectedResult: string;
+  finalUrl: string;
+  evidence: AutomationEvidence[];
+  diagnostics: {
+    console: string;
+    network: string;
+  };
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface AutomationRun {
+  id: string;
+  status: 'waiting_runner' | 'running' | 'completed' | 'failed' | 'cancelled';
+  project: {
+    name: string;
+    sprint: string;
+    evidenceProjectId: string | null;
+    qaPlanId: string | null;
+  };
+  target: { baseUrl: string; loginUrl: string };
+  cards: Array<{
+    code: string;
+    title: string;
+    hu: string;
+    path: string;
+    scenarios: Array<{
+      id: string;
+      code: string;
+      title: string;
+      bdd: string;
+      path: string;
+    }>;
+  }>;
+  totalScenarios: number;
+  completedScenarios: number;
+  current: {
+    cardCode: string;
+    scenarioId: string;
+    scenarioCode: string;
+    step: string;
+  } | null;
+  cancelRequested: boolean;
+  results: AutomationScenarioResult[];
+  events: Array<{
+    at: string;
+    level: 'info' | 'success' | 'warning' | 'error';
+    message: string;
+  }>;
+  runner: { name: string; version: string; machine: string } | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string;
 }
 
 export function scenarioCode(index: number): string {

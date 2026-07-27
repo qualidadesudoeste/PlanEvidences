@@ -2,6 +2,7 @@ import { getObjectBuffer } from '../storage.js';
 import {
   correctiveAttachmentPrefix,
   safeAttachmentName,
+  safeStorageSegment,
   validateCorrectiveRequestId,
 } from './correctiveAttachmentPaths.js';
 
@@ -467,13 +468,21 @@ function attachmentMimeType(attachment) {
   return 'image/jpeg';
 }
 
-function normalizedCorrectiveAttachments(context, userCacheKey, requestId) {
-  const prefix = correctiveAttachmentPrefix(userCacheKey, requestId);
+export function normalizedCorrectiveAttachments(context, userCacheKey, requestId) {
+  const correctivePrefix = correctiveAttachmentPrefix(userCacheKey, requestId);
+  const automationPrefix =
+    context?.automationRunId && context?.scenarioId
+      ? `automation/${safeStorageSegment(userCacheKey)}/${safeStorageSegment(
+          context.automationRunId
+        )}/${safeStorageSegment(context.scenarioId)}/`
+      : null;
   const seen = new Set();
   return (Array.isArray(context?.correctiveAttachments) ? context.correctiveAttachments : [])
     .filter((attachment) => {
       const key = String(attachment?.key || '');
-      if (!key.startsWith(prefix) || seen.has(key)) return false;
+      const belongsToCorrective = key.startsWith(correctivePrefix);
+      const belongsToAutomation = automationPrefix && key.startsWith(automationPrefix);
+      if ((!belongsToCorrective && !belongsToAutomation) || seen.has(key)) return false;
       seen.add(key);
       return true;
     })
