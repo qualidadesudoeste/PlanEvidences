@@ -76,6 +76,13 @@ próxima ação. O navegador é controlado pelo pacote oficial `@playwright/mcp`
 **Runner Local**, instalado no computador do QA. Dessa forma, o navegador continua
 dentro da VPN do cliente.
 
+As ferramentas publicadas pelo Playwright MCP são registradas na API do provedor como
+funções nativas. OpenAI usa function calling obrigatório, Anthropic usa `tool_use` e
+Gemini usa `functionDeclarations` em modo `ANY`. A IA só consegue escolher uma função
+registrada e os argumentos seguem o schema real do MCP; não existe interpretação de
+nomes de ferramenta gerados como texto livre. A função virtual
+`automation_complete` é usada para encerrar cada etapa com resultado estruturado.
+
 Usuário e senha do sistema testado vão diretamente do navegador para
 `127.0.0.1:4317`. Eles não são gravados no PlanEvidences e não são enviados à IA.
 O backend recebe apenas os marcadores `{{USERNAME}}` e `{{PASSWORD}}`; a substituição

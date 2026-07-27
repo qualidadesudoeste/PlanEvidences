@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { executeAutomationJob } from '../src/executor.js';
 
+const nativeDecisionMode = process.env.SMOKE_NATIVE_AI === 'true';
+const decideAutomationAction = nativeDecisionMode
+  ? (await import('../../backend/src/services/automationAgent.js')).decideAutomationAction
+  : null;
 const planPort = 43220;
 const targetPort = 43221;
 const planOrigin = `http://127.0.0.1:${planPort}`;
@@ -96,6 +100,27 @@ const planServer = http.createServer(async (req, res) => {
     return;
   }
   if (req.url.endsWith('/decision')) {
+    if (nativeDecisionMode) {
+      try {
+        const decision = await decideAutomationAction({
+          run: runPayload(),
+          scenario: {
+            ...scenario,
+            cardCode: '123456',
+            cardTitle: 'HU.1 - Login sintético',
+            hu: 'HU.1',
+          },
+          observation: body.observation,
+          history: body.history,
+          tools: body.tools,
+          purpose: body.purpose,
+        });
+        json(res, 200, { ok: true, decision });
+      } catch (error) {
+        json(res, error.status || 500, { error: error.message, code: error.code });
+      }
+      return;
+    }
     if (body.purpose === 'login') {
       const usernameRef = String(body.observation).match(
         /textbox "Usuário" \[ref=([^\]]+)\]/
@@ -205,7 +230,11 @@ try {
   assert.equal(runStatus, 'completed');
   assert.equal(results.length, 1);
   assert.equal(results[0].status, 'passed');
-  console.log('Smoke login aprovado: autenticação local e cenário concluídos.');
+  console.log(
+    `Smoke login aprovado: autenticação local e cenário concluídos${
+      nativeDecisionMode ? ' com tool calling nativo' : ''
+    }.`
+  );
 } finally {
   await Promise.all([
     new Promise((resolve) => targetServer.close(resolve)),

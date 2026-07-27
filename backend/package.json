@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node --env-file=.env src/server.js",
     "dev": "node --env-file=.env --watch src/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:automation-decision": "node --env-file=.env scripts/smoke-automation-decision.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.658.1",

@@ -1,4 +1,4 @@
-import { PROVIDERS, extractJSON } from './aiProviders.js';
+import { callProviderTool } from './aiProviders.js';
 
 const ALLOWED_TOOLS = new Set([
   'browser_navigate',
@@ -16,29 +16,31 @@ const ALLOWED_TOOLS = new Set([
   'browser_navigate_back',
 ]);
 
+const AUTOMATION_COMPLETE_TOOL = {
+  name: 'automation_complete',
+  description:
+    'Finaliza a etapa atual somente quando já existe evidência observável suficiente para concluir.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      status: {
+        type: 'string',
+        enum: ['passed', 'failed', 'blocked', 'not_automatable'],
+      },
+      summary: { type: 'string' },
+      actualResult: { type: 'string' },
+      expectedResult: { type: 'string' },
+      lastStep: { type: 'string' },
+    },
+    required: ['status', 'summary', 'actualResult', 'expectedResult', 'lastStep'],
+  },
+};
+
 const AUTOMATION_SYSTEM_PROMPT = `Você é um agente de QA executando um cenário BDD em um navegador controlado pelo Playwright MCP.
 
-Você recebe o cenário, a URL alvo, o snapshot atual da página e um histórico curto das ações já realizadas. Escolha exatamente uma próxima ação.
-
-Retorne APENAS um JSON válido em um destes formatos:
-
-Para usar uma ferramenta:
-{
-  "type": "tool",
-  "tool": "nome_exato_da_ferramenta",
-  "arguments": {},
-  "step": "descrição curta e segura da ação"
-}
-
-Para finalizar:
-{
-  "type": "complete",
-  "status": "passed|failed|blocked|not_automatable",
-  "summary": "conclusão objetiva",
-  "actualResult": "comportamento realmente observado",
-  "expectedResult": "comportamento esperado pelo BDD",
-  "lastStep": "última ação relevante executada"
-}
+Você recebe o cenário, a URL alvo, o snapshot atual da página e um histórico curto das ações já realizadas.
+Escolha exatamente uma próxima ação chamando UMA das ferramentas registradas.
+Use automation_complete somente para finalizar a etapa. Não responda com texto livre ou JSON manual.
 
 Regras:
 - Use somente as ferramentas fornecidas.
@@ -94,6 +96,32 @@ function compactTool(tool) {
   };
 }
 
+function describeToolCall(name, args = {}) {
+  const subject =
+    args.element ||
+    args.name ||
+    args.key ||
+    args.url ||
+    args.text ||
+    name.replace(/^browser_/, '').replaceAll('_', ' ');
+  const labels = {
+    browser_navigate: 'Abrir',
+    browser_click: 'Clicar em',
+    browser_type: 'Digitar em',
+    browser_fill_form: 'Preencher formulário',
+    browser_select_option: 'Selecionar opção em',
+    browser_check: 'Marcar',
+    browser_uncheck: 'Desmarcar',
+    browser_press_key: 'Pressionar',
+    browser_wait_for: 'Aguardar',
+    browser_hover: 'Posicionar sobre',
+    browser_tabs: 'Gerenciar abas',
+    browser_find: 'Localizar',
+    browser_navigate_back: 'Voltar',
+  };
+  return `${labels[name] || 'Executar'} ${String(subject || '').trim()}`.trim().slice(0, 500);
+}
+
 export async function decideAutomationAction({
   run,
   scenario,
@@ -114,7 +142,6 @@ export async function decideAutomationAction({
   }
 
   const provider = configuredProvider();
-  const providerFn = PROVIDERS[provider.name];
   const userPrompt = [
     loginMode
       ? `FASE ATUAL: AUTENTICAÇÃO.
@@ -142,45 +169,48 @@ Não repita uma ação que já aparece como concluída no histórico.`
     .filter(Boolean)
     .join('\n\n');
 
-  const result = await providerFn({
+  const decision = await callProviderTool({
+    provider: provider.name,
     apiKey: provider.key,
     model: provider.model,
     systemPrompt: AUTOMATION_SYSTEM_PROMPT,
     userPrompt,
+    tools: [...availableTools, AUTOMATION_COMPLETE_TOOL],
   });
-  const decision = extractJSON(result.texto);
 
-  if (decision?.type === 'complete') {
-    const status = ['passed', 'failed', 'blocked', 'not_automatable'].includes(decision.status)
-      ? decision.status
+  if (decision.name === AUTOMATION_COMPLETE_TOOL.name) {
+    const completion = decision.arguments || {};
+    const status = ['passed', 'failed', 'blocked', 'not_automatable'].includes(completion.status)
+      ? completion.status
       : 'blocked';
     return {
       type: 'complete',
       status,
-      summary: String(decision.summary || '').slice(0, 3_000),
-      actualResult: String(decision.actualResult || '').slice(0, 3_000),
-      expectedResult: String(decision.expectedResult || '').slice(0, 3_000),
-      lastStep: String(decision.lastStep || '').slice(0, 1_000),
+      summary: String(completion.summary || '').slice(0, 3_000),
+      actualResult: String(completion.actualResult || '').slice(0, 3_000),
+      expectedResult: String(completion.expectedResult || '').slice(0, 3_000),
+      lastStep: String(completion.lastStep || '').slice(0, 1_000),
     };
   }
 
   if (
-    decision?.type !== 'tool' ||
-    !ALLOWED_TOOLS.has(decision.tool) ||
-    !availableTools.some((tool) => tool.name === decision.tool)
+    !ALLOWED_TOOLS.has(decision.name) ||
+    !availableTools.some((tool) => tool.name === decision.name)
   ) {
-    const error = new Error('A IA solicitou uma ação de navegador inválida.');
+    const error = new Error(
+      `O provedor retornou uma ferramenta não registrada: ${String(decision.name || 'sem nome')}.`
+    );
     error.status = 502;
     error.code = 'AUTOMATION_INVALID_AI_ACTION';
     throw error;
   }
   return {
     type: 'tool',
-    tool: decision.tool,
+    tool: decision.name,
     arguments:
       decision.arguments && typeof decision.arguments === 'object'
         ? decision.arguments
         : {},
-    step: String(decision.step || decision.tool).slice(0, 500),
+    step: describeToolCall(decision.name, decision.arguments),
   };
 }

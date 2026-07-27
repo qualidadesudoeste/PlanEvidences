@@ -173,6 +173,246 @@ async function callOpenAI({ apiKey, model, userPrompt, systemPrompt = SYSTEM_PRO
   return { texto: data.choices?.[0]?.message?.content || '', usage: data.usage };
 }
 
+function toolArguments(value, providerName) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(String(value || '{}'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+  } catch {
+    // Mensagem segura e específica abaixo.
+  }
+  const error = new Error(`${providerName} retornou argumentos inválidos para a ferramenta.`);
+  error.status = 502;
+  error.code = 'AUTOMATION_TOOL_ARGUMENTS_INVALID';
+  throw error;
+}
+
+function normalizedTool(tool) {
+  return {
+    name: String(tool?.name || '').slice(0, 64),
+    description: String(tool?.description || '').slice(0, 1_000),
+    inputSchema:
+      tool?.inputSchema && typeof tool.inputSchema === 'object'
+        ? tool.inputSchema
+        : { type: 'object', properties: {} },
+  };
+}
+
+async function callOpenAITool({
+  apiKey,
+  model,
+  userPrompt,
+  systemPrompt,
+  tools,
+}) {
+  const response = await fetchWithRetry(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: model || 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        tools: tools.map((tool) => {
+          const normalized = normalizedTool(tool);
+          return {
+            type: 'function',
+            function: {
+              name: normalized.name,
+              description: normalized.description,
+              parameters: normalized.inputSchema,
+            },
+          };
+        }),
+        tool_choice: 'required',
+        parallel_tool_calls: false,
+        temperature: 0.1,
+      }),
+    },
+    'OpenAI'
+  );
+  const data = await response.json();
+  const call = data.choices?.[0]?.message?.tool_calls?.find(
+    (item) => item?.type === 'function'
+  );
+  if (!call?.function?.name) {
+    const error = new Error('OpenAI não selecionou uma ferramenta para a próxima ação.');
+    error.status = 502;
+    error.code = 'AUTOMATION_TOOL_CALL_MISSING';
+    throw error;
+  }
+  return {
+    name: call.function.name,
+    arguments: toolArguments(call.function.arguments, 'OpenAI'),
+    usage: data.usage,
+  };
+}
+
+async function callAnthropicTool({
+  apiKey,
+  model,
+  userPrompt,
+  systemPrompt,
+  tools,
+}) {
+  const response = await fetchWithRetry(
+    'https://api.anthropic.com/v1/messages',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: model || 'claude-sonnet-4-6',
+        max_tokens: 2_048,
+        system: [{ type: 'text', text: systemPrompt }],
+        messages: [{ role: 'user', content: userPrompt }],
+        tools: tools.map((tool) => {
+          const normalized = normalizedTool(tool);
+          return {
+            name: normalized.name,
+            description: normalized.description,
+            input_schema: normalized.inputSchema,
+          };
+        }),
+        tool_choice: { type: 'any', disable_parallel_tool_use: true },
+      }),
+    },
+    'Anthropic'
+  );
+  const data = await response.json();
+  const call = data.content?.find((item) => item?.type === 'tool_use');
+  if (!call?.name) {
+    const error = new Error('Anthropic não selecionou uma ferramenta para a próxima ação.');
+    error.status = 502;
+    error.code = 'AUTOMATION_TOOL_CALL_MISSING';
+    throw error;
+  }
+  return {
+    name: call.name,
+    arguments: toolArguments(call.input, 'Anthropic'),
+    usage: data.usage,
+  };
+}
+
+async function callGeminiToolOnce({
+  apiKey,
+  model,
+  userPrompt,
+  systemPrompt,
+  tools,
+}) {
+  const modelName = model || 'gemini-2.5-flash';
+  const generationConfig = {
+    temperature: 0.1,
+    maxOutputTokens: 4_096,
+  };
+  if (modelName.startsWith('gemini-2.5')) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+  const declarations = tools.map((tool) => {
+    const normalized = normalizedTool(tool);
+    return {
+      name: normalized.name,
+      description: normalized.description,
+      parameters: normalized.inputSchema,
+    };
+  });
+  const response = await fetchWithRetry(
+    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        tools: [{ functionDeclarations: declarations }],
+        toolConfig: {
+          functionCallingConfig: {
+            mode: 'ANY',
+            allowedFunctionNames: declarations.map((item) => item.name),
+          },
+        },
+        generationConfig,
+      }),
+    },
+    'Gemini'
+  );
+  const data = await response.json();
+  const call = data.candidates?.[0]?.content?.parts?.find(
+    (part) => part?.functionCall
+  )?.functionCall;
+  if (!call?.name) {
+    const error = new Error('Gemini não selecionou uma ferramenta para a próxima ação.');
+    error.status = 502;
+    error.code = 'AUTOMATION_TOOL_CALL_MISSING';
+    throw error;
+  }
+  return {
+    name: call.name,
+    arguments: toolArguments(call.args, 'Gemini'),
+    usage: data.usageMetadata,
+  };
+}
+
+export async function callProviderTool({
+  provider,
+  apiKey,
+  model,
+  userPrompt,
+  systemPrompt,
+  tools,
+}) {
+  if (!Array.isArray(tools) || tools.length === 0) {
+    const error = new Error('Nenhuma ferramenta foi registrada para o agente.');
+    error.status = 422;
+    error.code = 'AUTOMATION_TOOLS_UNAVAILABLE';
+    throw error;
+  }
+  if (provider === 'openai') {
+    return callOpenAITool({ apiKey, model, userPrompt, systemPrompt, tools });
+  }
+  if (provider === 'anthropic') {
+    return callAnthropicTool({ apiKey, model, userPrompt, systemPrompt, tools });
+  }
+  if (provider === 'gemini') {
+    if (!apiKey.startsWith('AIza')) {
+      const error = new Error('API key do Gemini inválida.');
+      error.status = 400;
+      throw error;
+    }
+    const requestedModel = model || 'gemini-2.5-flash';
+    const fallbackChain = [...new Set([requestedModel, 'gemini-2.5-flash', 'gemini-2.0-flash'])];
+    let lastError;
+    for (const modelName of fallbackChain) {
+      try {
+        return await callGeminiToolOnce({
+          apiKey,
+          model: modelName,
+          userPrompt,
+          systemPrompt,
+          tools,
+        });
+      } catch (error) {
+        lastError = error;
+        if (![429, 503].includes(error.status)) throw error;
+      }
+    }
+    throw lastError;
+  }
+  const error = new Error(`Provedor de IA não suportado para automação: ${provider}`);
+  error.status = 500;
+  throw error;
+}
+
 async function callGeminiOnce(apiKey, modelName, userPrompt, systemPrompt = SYSTEM_PROMPT) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
