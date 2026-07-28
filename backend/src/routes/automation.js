@@ -4,6 +4,7 @@ import {
   getAutomationRunForUser,
   requestAutomationCancellation,
 } from '../services/automationRuns.js';
+import { clearAutomationAgentSessions } from '../services/automationAgent.js';
 
 const router = Router();
 
@@ -21,6 +22,7 @@ router.get('/runs/:runId', (req, res) => {
   if (!run) {
     return res.status(404).json({ ok: false, error: 'Execução automatizada não encontrada.' });
   }
+  clearAutomationAgentSessions(run.id);
   return res.json({ ok: true, run });
 });
 
@@ -36,4 +38,3 @@ router.post('/runs/:runId/cancel', (req, res) => {
 });
 
 export default router;
-

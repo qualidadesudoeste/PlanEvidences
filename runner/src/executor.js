@@ -3,7 +3,7 @@ import path from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
 import { McpBrowser } from './mcpBrowser.js';
 
-const RUNNER_VERSION = '0.1.2';
+const RUNNER_VERSION = '0.2.0';
 
 function apiHeaders(token, json = false) {
   return {
@@ -48,16 +48,61 @@ async function currentRun(job) {
   return data.run;
 }
 
-async function decide(job, scenarioId, observation, history, tools, purpose = 'scenario') {
+async function decide(
+  job,
+  scenarioId,
+  observation,
+  history,
+  tools,
+  purpose = 'scenario',
+  image = null
+) {
   const data = await serverRequest(
     job,
     `/api/automation-runner/runs/${job.runId}/decision`,
     {
       method: 'POST',
-      body: JSON.stringify({ scenarioId, observation, history, tools, purpose }),
+      body: JSON.stringify({ scenarioId, observation, history, tools, purpose, image }),
     }
   );
   return data.decision;
+}
+
+async function announceAgentMode(job, decision) {
+  if (job.agentModeAnnounced || decision?.agentMode !== 'visual_persistent') return;
+  job.agentModeAnnounced = true;
+  await updateRun(job, {
+    event: {
+      level: 'success',
+      message: 'Agente visual persistente conectado: contexto e visão serão mantidos durante o cenário.',
+    },
+  }).catch(() => {});
+}
+
+export async function captureVisualFrame(browser, outputDir) {
+  if (!browser.hasTool('browser_take_screenshot')) return null;
+  const filename = `agent-frame-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}.jpeg`;
+  const filePath = path.join(outputDir, filename);
+  try {
+    await browser.call('browser_take_screenshot', {
+      type: 'jpeg',
+      filename,
+      fullPage: false,
+      scale: 'css',
+    });
+    const buffer = await readFile(filePath);
+    if (buffer.length === 0 || buffer.length > 5 * 1024 * 1024) return null;
+    return {
+      mimeType: 'image/jpeg',
+      data: buffer.toString('base64'),
+    };
+  } catch {
+    return null;
+  } finally {
+    await rm(filePath, { force: true }).catch(() => {});
+  }
 }
 
 async function currentBrowserObservation(browser, secrets, primaryResult = null) {
@@ -488,7 +533,7 @@ function authenticationError(message, code, details = {}) {
   return error;
 }
 
-async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
+async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDir }) {
   const history = [];
   const credentialUsage = { username: false, password: false };
   let submitted = false;
@@ -649,14 +694,22 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
     const state = await currentRun(job);
     if (state.cancelRequested) throw new Error('Execução cancelada durante a autenticação.');
 
+    // O frame visual só é enviado antes da digitação das credenciais. Depois
+    // disso o Runner usa DOM redigido até confirmar que saiu da tela de login.
+    const visualFrame =
+      !credentialUsage.username && !credentialUsage.password
+        ? await captureVisualFrame(browser, outputDir)
+        : null;
     const decision = await decide(
       job,
       scenarioId,
       observation,
       history,
       browser.agentTools(),
-      'login'
+      'login',
+      visualFrame
     );
+    await announceAgentMode(job, decision);
     if (decision.type === 'complete') {
       if (decision.status === 'passed') {
         await updateRun(job, {
@@ -861,13 +914,17 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
         };
       }
 
+      const visualFrame = await captureVisualFrame(browser, outputDir);
       const decision = await decide(
         job,
         scenario.id,
         observation,
         history,
-        browser.agentTools()
+        browser.agentTools(),
+        'scenario',
+        visualFrame
       );
+      await announceAgentMode(job, decision);
       if (decision.type === 'complete') {
         const shouldCapture = decision.status !== 'passed';
         const evidence = shouldCapture
@@ -1011,6 +1068,7 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
     runnerToken: String(jobInput.runnerToken || ''),
     run: null,
     allowedOrigins: [],
+    agentModeAnnounced: false,
   };
   let secrets = {
     username: String(jobInput.credentials?.username || ''),
@@ -1068,6 +1126,7 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
       job,
       scenarioId: firstScenario.id,
       secrets,
+      outputDir,
     });
 
     for (const card of initial.cards) {

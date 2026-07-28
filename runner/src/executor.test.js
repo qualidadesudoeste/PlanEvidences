@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import {
   authenticationObservationState,
   authenticationSucceeded,
+  captureVisualFrame,
   ensureAllowedNavigation,
   ensureObservationOrigin,
   isLoginSubmission,
@@ -339,4 +343,25 @@ test('explica URL ou VPN quando nem o snapshot alcança o sistema', async () => 
       error.code === 'AUTOMATION_NAVIGATION_TIMEOUT' &&
       /endereço informado, a conexão com a VPN/.test(error.message)
   );
+});
+
+test('captura frame visual temporário sem deixar a imagem no disco', async () => {
+  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'planevidences-frame-'));
+  const browser = {
+    hasTool: (name) => name === 'browser_take_screenshot',
+    call: async (_name, args) => {
+      await writeFile(path.join(outputDir, args.filename), Buffer.from('imagem-jpeg'));
+      return { content: [] };
+    },
+  };
+  try {
+    const frame = await captureVisualFrame(browser, outputDir);
+    assert.equal(frame.mimeType, 'image/jpeg');
+    assert.equal(
+      Buffer.from(frame.data, 'base64').toString('utf8'),
+      'imagem-jpeg'
+    );
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
 });

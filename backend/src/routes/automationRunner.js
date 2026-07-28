@@ -9,7 +9,10 @@ import {
   updateAutomationRun,
 } from '../services/automationRuns.js';
 import { safeStorageSegment } from '../services/correctiveAttachmentPaths.js';
-import { decideAutomationAction } from '../services/automationAgent.js';
+import {
+  clearAutomationAgentSessions,
+  decideAutomationAction,
+} from '../services/automationAgent.js';
 
 const router = Router();
 const evidenceUpload = multer({
@@ -49,6 +52,9 @@ router.post('/runs/:runId/claim', runnerAuth, (req, res) => {
 
 router.patch('/runs/:runId', runnerAuth, (req, res) => {
   const run = updateAutomationRun(req.automationRun, req.body);
+  if (['completed', 'failed', 'cancelled'].includes(run.status)) {
+    clearAutomationAgentSessions(run.id);
+  }
   res.json({ ok: true, run });
 });
 
@@ -79,6 +85,7 @@ router.post('/runs/:runId/decision', runnerAuth, async (req, res, next) => {
       history: req.body.history,
       tools: req.body.tools,
       purpose: req.body.purpose,
+      image: req.body.image,
     });
     return res.json({ ok: true, decision });
   } catch (error) {

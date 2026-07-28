@@ -390,6 +390,30 @@ Storage: crie um bucket público chamado `planevidences` (Storage → New bucket
 | GET | `/api/documents` | Lista histórico de documentos gerados |
 | GET | `/*` (não-API) | SPA do React (frontend/dist) |
 
+### Agente visual de automação
+
+Com `OPENAI_API_KEY` configurada, a automação usa uma sessão persistente da
+Responses API por etapa de login e por cenário. O Runner envia o snapshot
+acessível e um frame JPEG da página a cada turno, executa localmente as
+ferramentas Playwright MCP e devolve o resultado para a mesma sessão. Assim o
+agente mantém o plano, o contexto e consegue se recuperar de mudanças visuais.
+
+As credenciais continuam restritas ao Runner: a IA recebe apenas os marcadores
+`{{USERNAME}}` e `{{PASSWORD}}`. Durante o login, o frame visual só é enviado
+antes do preenchimento; depois disso o Runner usa o DOM com os valores
+redigidos até confirmar a autenticação.
+
+Variáveis relevantes:
+
+```env
+OPENAI_API_KEY=sk-...
+AUTOMATION_OPENAI_MODEL=gpt-5.4
+AUTOMATION_VISUAL_AGENT=true
+```
+
+Sem uma chave OpenAI, Anthropic e Gemini continuam disponíveis no modo legado,
+sem memória visual persistente. O Runner 0.2.0 ou superior é obrigatório.
+
 ---
 
 ## Deploy alternativo: Vercel + Render (legado)

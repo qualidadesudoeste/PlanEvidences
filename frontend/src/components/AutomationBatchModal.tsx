@@ -281,7 +281,7 @@ export function AutomationBatchModal({
               <Bot size={23} /> Execução automatizada
             </h2>
             <p>
-              Selecione cards e cenários para o Runner Local executar com Playwright MCP.
+              Selecione cards e cenários para o agente visual executar com Playwright em segundo plano.
             </p>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="Fechar">
@@ -297,7 +297,7 @@ export function AutomationBatchModal({
                 <div>
                   <strong>Runner Local</strong>
                   <span>
-                    Inicia automaticamente com o Windows e executa o navegador em segundo plano.
+                    Mantém a sessão do agente, acessa a VPN deste computador e executa o navegador sem abrir janelas.
                   </span>
                 </div>
               </div>
