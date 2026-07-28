@@ -1,7 +1,14 @@
 @echo off
 setlocal
 title PlanEvidences Runner
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install-portable.ps1"
+set "WINDOWS_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%WINDOWS_POWERSHELL%" (
+  echo Windows PowerShell nao foi encontrado em:
+  echo %WINDOWS_POWERSHELL%
+  pause
+  exit /b 1
+)
+"%WINDOWS_POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0install-portable.ps1"
 if errorlevel 1 (
   echo.
   echo Nao foi possivel instalar o PlanEvidences Runner.

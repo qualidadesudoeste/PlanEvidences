@@ -84,8 +84,18 @@ Start-Process -FilePath (Join-Path $env:WINDIR 'System32\wscript.exe') `
     -ArgumentList "`"$(Join-Path $installRoot 'start-runner.vbs')`"" `
     -WindowStyle Hidden
 
-Start-Sleep -Seconds 3
-$started = Get-NetTCPConnection -LocalPort $runnerPort -State Listen -ErrorAction SilentlyContinue
+$started = $false
+for ($attempt = 1; $attempt -le 20; $attempt++) {
+    try {
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$runnerPort/health" -TimeoutSec 1
+        if ($health.ok -and $health.name -eq 'PlanEvidences Runner Local') {
+            $started = $true
+            break
+        }
+    } catch {
+        Start-Sleep -Milliseconds 500
+    }
+}
 if (-not $started) {
     throw "O Runner foi instalado, mas não iniciou na porta $runnerPort. Consulte $installRoot\logs\runner-error.log."
 }

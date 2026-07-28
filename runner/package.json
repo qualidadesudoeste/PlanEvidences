@@ -1,6 +1,6 @@
 {
   "name": "planevidences-automation-runner",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Runner local do PlanEvidences para execução de cenários via Playwright MCP",

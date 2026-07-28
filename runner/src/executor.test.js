@@ -231,6 +231,61 @@ test('identifica diretamente os campos de usuário e senha no snapshot', () => {
   );
 });
 
+test('identifica campos de login sem nome acessível pelos rótulos próximos', () => {
+  assert.deepEqual(
+    loginCredentialTargets(`
+      - text: Usuário ou Matrícula
+      - textbox [ref=e40]
+      - text: Senha
+      - textbox [ref=e41]
+      - button "Entrar" [ref=e42]
+    `),
+    {
+      username: {
+        name: 'Usuário ou matrícula',
+        target: 'e40',
+        normalizedName: 'usuario ou matricula',
+      },
+      password: {
+        name: 'Senha',
+        target: 'e41',
+        normalizedName: 'senha',
+      },
+    }
+  );
+});
+
+test('usa a ordem dos dois campos quando a tela de login não fornece rótulos acessíveis', () => {
+  const targets = loginCredentialTargets(`
+    - heading "Acesse sua conta"
+    - textbox [ref=e50]
+    - textbox [ref=e51]
+    - button "Entrar" [ref=e52]
+  `);
+  assert.equal(targets?.username.target, 'e50');
+  assert.equal(targets?.password.target, 'e51');
+});
+
+test('recusa preenchimento genérico da IA sem marcadores protegidos durante o login', () => {
+  assert.throws(
+    () =>
+      validateSecretPlacement({
+        tool: 'browser_fill_form',
+        args: {
+          fields: [
+            { name: 'Usuário', target: 'e1', value: '' },
+            { name: 'Senha', target: 'e2', value: '' },
+          ],
+        },
+        observation: '### Page\n- Page URL: https://cliente.local/login',
+        loginUrl: 'https://cliente.local/login',
+        usage: { username: false, password: false },
+        requireCredentialMarker: true,
+      }),
+    /marcadores protegidos/
+  );
+});
+
 test('recupera o snapshot quando a navegação excede o tempo mas a página abriu', async () => {
   const browser = {
     hasTool: (name) => name === 'browser_snapshot',

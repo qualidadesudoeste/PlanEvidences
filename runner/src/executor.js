@@ -3,7 +3,7 @@ import path from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
 import { McpBrowser } from './mcpBrowser.js';
 
-const RUNNER_VERSION = '0.1.1';
+const RUNNER_VERSION = '0.1.2';
 
 function apiHeaders(token, json = false) {
   return {
@@ -179,24 +179,61 @@ function normalizedObservation(value) {
 }
 
 export function loginCredentialTargets(observation) {
-  const fields = [
-    ...String(observation || '').matchAll(
-      /(?:textbox|combobox)\s+["']([^"'\r\n]+)["'][^\r\n]*?\[ref=([^\]\s]+)\]/giu
-    ),
-  ].map((match) => ({
-    name: match[1],
-    target: match[2],
-    normalizedName: normalizedObservation(match[1]),
-  }));
+  const lines = String(observation || '').split(/\r?\n/);
+  const usernamePattern =
+    /\b(usuario|user(?:name)?|login|e-?mail|cpf|matricula|identificador)\b/;
+  const passwordPattern = /\b(senha|password|passcode|pwd)\b/;
+  const nearbyLabel = (lineIndex) => {
+    for (let index = lineIndex; index >= Math.max(0, lineIndex - 4); index -= 1) {
+      const normalizedLine = normalizedObservation(lines[index]);
+      if (passwordPattern.test(normalizedLine)) return 'Senha';
+      if (usernamePattern.test(normalizedLine)) return 'Usuário ou matrícula';
+    }
+    return '';
+  };
+  const fields = lines
+    .map((line, lineIndex) => {
+      const match = line.match(
+        /(?:textbox|combobox)\b(?:\s+["']([^"'\r\n]+)["'])?[^\r\n]*?\[ref=([^\]\s]+)\]/iu
+      );
+      if (!match) return null;
+      const name = String(match[1] || nearbyLabel(lineIndex)).trim();
+      return {
+        name,
+        target: match[2],
+        normalizedName: normalizedObservation(name),
+      };
+    })
+    .filter(Boolean);
   const username = fields.find((field) =>
-    /\b(usuario|user(?:name)?|login|e-?mail|cpf|matricula|identificador)\b/.test(
-      field.normalizedName
-    )
+    usernamePattern.test(field.normalizedName)
   );
   const password = fields.find((field) =>
-    /\b(senha|password|passcode|pwd)\b/.test(field.normalizedName)
+    passwordPattern.test(field.normalizedName)
   );
-  return username && password ? { username, password } : null;
+  if (username && password && username.target !== password.target) {
+    return { username, password };
+  }
+
+  const loginContext = normalizedObservation(observation);
+  if (
+    fields.length === 2 &&
+    /\b(entrar|acessar|login|autenticar|sign in)\b/.test(loginContext)
+  ) {
+    return {
+      username: username || {
+        ...fields[0],
+        name: fields[0].name || 'Usuário ou matrícula',
+        normalizedName: fields[0].normalizedName || 'usuario ou matricula',
+      },
+      password: password || {
+        ...fields[1],
+        name: fields[1].name || 'Senha',
+        normalizedName: fields[1].normalizedName || 'senha',
+      },
+    };
+  }
+  return null;
 }
 
 export function normalizeBrowserToolArguments(tool, args = {}) {
@@ -319,10 +356,21 @@ export function validateSecretPlacement({
   observation,
   loginUrl,
   usage,
+  requireCredentialMarker = false,
 }) {
   const serialized = JSON.stringify(args || {});
   const usesUsername = serialized.includes('{{USERNAME}}');
   const usesPassword = serialized.includes('{{PASSWORD}}');
+  if (
+    requireCredentialMarker &&
+    ['browser_fill_form', 'browser_type'].includes(tool) &&
+    !usesUsername &&
+    !usesPassword
+  ) {
+    throw new Error(
+      'A ação de preenchimento do login não incluiu os marcadores protegidos de usuário ou senha.'
+    );
+  }
   if (!usesUsername && !usesPassword) return { usesUsername: false, usesPassword: false };
 
   if (!['browser_fill_form', 'browser_type'].includes(tool)) {
@@ -665,6 +713,7 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
       observation,
       loginUrl: job.run.target.loginUrl,
       usage: credentialUsage,
+      requireCredentialMarker: true,
     });
     const actualArgs = substituteSecrets(normalizedArgs, secrets);
     let toolResult;
