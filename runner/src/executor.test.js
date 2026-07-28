@@ -19,6 +19,7 @@ import {
   normalizeBrowserToolArguments,
   redactSecrets,
   safeHistoryArguments,
+  scenarioStartUrl,
   substituteSecrets,
   validateSecretPlacement,
   waitForAuthenticationResponse,
@@ -114,6 +115,33 @@ test('protege valores digitados no histórico e bloqueia navegação fora da ori
         ['https://cliente.local']
       ),
     /saiu das origens autorizadas/
+  );
+});
+
+test('preserva a página autenticada quando a URL base informada é a própria tela de login', () => {
+  assert.equal(
+    scenarioStartUrl({
+      run: {
+        target: {
+          baseUrl: 'https://cliente.local/portal/login',
+          loginUrl: 'https://cliente.local/portal/login',
+        },
+      },
+      authenticatedUrl: 'https://cliente.local/portal/inicio',
+    }),
+    'https://cliente.local/portal/inicio'
+  );
+  assert.equal(
+    scenarioStartUrl({
+      run: {
+        target: {
+          baseUrl: 'https://cliente.local/portal',
+          loginUrl: 'https://cliente.local/portal/login',
+        },
+      },
+      authenticatedUrl: 'https://cliente.local/portal/inicio',
+    }),
+    'https://cliente.local/portal'
   );
 });
 

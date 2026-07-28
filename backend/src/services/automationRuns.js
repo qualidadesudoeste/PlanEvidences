@@ -4,7 +4,7 @@ const runs = new Map();
 const RUN_TTL_MS = 24 * 60 * 60_000;
 const RUNNER_TOKEN_TTL_MS = 8 * 60 * 60_000;
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
-export const MINIMUM_RUNNER_VERSION = '0.2.2';
+export const MINIMUM_RUNNER_VERSION = '0.2.3';
 
 function tokenHash(token) {
   return createHash('sha256').update(String(token)).digest('hex');

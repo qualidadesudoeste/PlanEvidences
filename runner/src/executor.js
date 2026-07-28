@@ -3,7 +3,7 @@ import path from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
 import { McpBrowser } from './mcpBrowser.js';
 
-const RUNNER_VERSION = '0.2.2';
+const RUNNER_VERSION = '0.2.3';
 const UI_SETTLE_TIMEOUT_MS = Math.max(
   10_000,
   Math.min(180_000, Number(process.env.RUNNER_UI_SETTLE_TIMEOUT_MS) || 90_000)
@@ -757,6 +757,28 @@ function authenticationError(message, code, details = {}) {
   return error;
 }
 
+async function confirmAuthenticatedSession(job, observation, message) {
+  job.authenticatedUrl =
+    finalUrlFromObservation(observation) || job.authenticatedUrl || job.run.target.baseUrl;
+  await updateRun(job, {
+    event: { level: 'success', message },
+  });
+}
+
+export function scenarioStartUrl(job) {
+  try {
+    const base = new URL(job.run.target.baseUrl);
+    const login = new URL(job.run.target.loginUrl);
+    const baseIsLogin =
+      base.href === login.href || /(?:^|\/)(?:login|signin|autenticar)(?:\/|$)/i.test(base.pathname);
+    return baseIsLogin && job.authenticatedUrl
+      ? job.authenticatedUrl
+      : job.run.target.baseUrl;
+  } catch {
+    return job.authenticatedUrl || job.run.target.baseUrl;
+  }
+}
+
 async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDir }) {
   const history = [];
   const credentialUsage = { username: false, password: false };
@@ -922,12 +944,11 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDi
         );
       }
       if (authenticationSucceeded({ observation, credentialUsage, submitted })) {
-        await updateRun(job, {
-          event: {
-            level: 'success',
-            message: 'Autenticação confirmada pelo desaparecimento do formulário de login.',
-          },
-        });
+        await confirmAuthenticatedSession(
+          job,
+          observation,
+          'Autenticação confirmada pelo desaparecimento do formulário de login.'
+        );
         return;
       }
       throw authenticationError(
@@ -977,9 +998,11 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDi
           });
           continue;
         }
-        await updateRun(job, {
-          event: { level: 'success', message: 'Autenticação concluída com sucesso.' },
-        });
+        await confirmAuthenticatedSession(
+          job,
+          observation,
+          'Autenticação concluída com sucesso.'
+        );
         return;
       }
       let loginState = authenticationObservationState(observation);
@@ -1001,12 +1024,11 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDi
           observation = retry.observation;
           loginState = authenticationObservationState(observation);
           if (authenticationSucceeded({ observation, credentialUsage, submitted })) {
-            await updateRun(job, {
-              event: {
-                level: 'success',
-                message: 'Autenticação confirmada após a tentativa compatível.',
-              },
-            });
+            await confirmAuthenticatedSession(
+              job,
+              observation,
+              'Autenticação confirmada após a tentativa compatível.'
+            );
             return;
           }
           if (loginState.hasLoginError) {
@@ -1166,12 +1188,11 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDi
       );
     }
     if (authenticationSucceeded({ observation, credentialUsage, submitted })) {
-      await updateRun(job, {
-        event: {
-          level: 'success',
-          message: 'Autenticação confirmada pelo desaparecimento do formulário de login.',
-        },
-      });
+      await confirmAuthenticatedSession(
+        job,
+        observation,
+        'Autenticação confirmada pelo desaparecimento do formulário de login.'
+      );
       return;
     }
   }
@@ -1206,13 +1227,43 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
   });
 
   try {
-    const navigation = await navigateWithRecovery({
+    let navigation = await navigateWithRecovery({
       browser,
-      url: job.run.target.baseUrl,
+      url: scenarioStartUrl(job),
       secrets,
     });
     observation = navigation.observation;
     ensureObservationOrigin(observation, job.allowedOrigins);
+    if (authenticationObservationState(observation).loginFormVisible) {
+      await updateRun(job, {
+        event: {
+          level: 'warning',
+          message:
+            'A sessão não estava disponível ao iniciar o cenário. O Runner tentará autenticar novamente uma única vez.',
+        },
+      });
+      await authenticateBrowser({
+        browser,
+        job,
+        scenarioId: scenario.id,
+        secrets,
+        outputDir,
+      });
+      navigation = await navigateWithRecovery({
+        browser,
+        url: scenarioStartUrl(job),
+        secrets,
+      });
+      observation = navigation.observation;
+      ensureObservationOrigin(observation, job.allowedOrigins);
+      if (authenticationObservationState(observation).loginFormVisible) {
+        throw authenticationError(
+          'A autenticação foi executada, mas o sistema voltou para a tela de login ao abrir a funcionalidade. O lote foi interrompido para evitar bloquear todos os cenários.',
+          'AUTOMATION_LOGIN_SESSION_NOT_AVAILABLE',
+          { observation, lastStep: 'Validar a sessão antes do cenário' }
+        );
+      }
+    }
 
     for (let stepNumber = 1; stepNumber <= maxSteps; stepNumber += 1) {
       const state = await currentRun(job);
@@ -1386,6 +1437,7 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
       finalUrl: finalUrlFromObservation(observation),
       evidence,
       diagnostics,
+      stopBatch: String(error.code || '').startsWith('AUTOMATION_LOGIN_'),
       startedAt,
       finishedAt: new Date().toISOString(),
     };
@@ -1408,6 +1460,7 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
     run: null,
     allowedOrigins: [],
     agentModeAnnounced: false,
+    authenticatedUrl: '',
   };
   let secrets = {
     username: String(jobInput.credentials?.username || ''),
@@ -1458,6 +1511,7 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
     }
     const maxSteps = Math.max(10, Math.min(60, Number(process.env.RUNNER_MAX_STEPS) || 35));
     let cancelled = false;
+    let batchInterrupted = '';
     if (!firstScenario) throw new Error('O lote não possui cenários para execução.');
     onLocalUpdate({ status: 'starting', message: 'Autenticando no sistema...' });
     await authenticateBrowser({
@@ -1499,21 +1553,32 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
             }`,
           },
         });
+        if (result.stopBatch) {
+          batchInterrupted = result.summary;
+          break;
+        }
       }
-      if (cancelled) break;
+      if (cancelled || batchInterrupted) break;
     }
 
     if (browser.hasTool('browser_stop_tracing')) {
       await browser.call('browser_stop_tracing').catch(() => {});
     }
     await updateRun(job, {
-      status: cancelled ? 'cancelled' : 'completed',
+      status: cancelled ? 'cancelled' : batchInterrupted ? 'failed' : 'completed',
       event: {
-        level: cancelled ? 'warning' : 'success',
-        message: cancelled ? 'Execução cancelada.' : 'Lote automatizado concluído.',
+        level: cancelled || batchInterrupted ? 'warning' : 'success',
+        message: cancelled
+          ? 'Execução cancelada.'
+          : batchInterrupted
+            ? 'Lote interrompido porque a sessão autenticada não está disponível.'
+            : 'Lote automatizado concluído.',
       },
     });
-    onLocalUpdate({ status: cancelled ? 'cancelled' : 'completed' });
+    onLocalUpdate({
+      status: cancelled ? 'cancelled' : batchInterrupted ? 'failed' : 'completed',
+      error: batchInterrupted || undefined,
+    });
   } catch (error) {
     const safeError = redactSecrets(error.message, secrets);
     if (String(error.code || '').startsWith('AUTOMATION_LOGIN_') && firstCard && firstScenario) {
