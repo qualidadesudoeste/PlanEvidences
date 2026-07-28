@@ -128,11 +128,119 @@ function finalUrlFromObservation(observation) {
   return match?.[1] || '';
 }
 
+export function isMcpRequestTimeout(error) {
+  return /(?:MCP error\s+-32001|request timed out|timed out)/i.test(
+    String(error?.message || error || '')
+  );
+}
+
+export async function navigateWithRecovery({ browser, url, secrets }) {
+  try {
+    const result = await browser.call('browser_navigate', { url });
+    return {
+      observation: await currentBrowserObservation(browser, secrets, result),
+      recovered: false,
+    };
+  } catch (error) {
+    if (!isMcpRequestTimeout(error)) throw error;
+
+    let observation = '';
+    try {
+      observation = await currentBrowserObservation(browser, secrets);
+    } catch {
+      // A mensagem amigável abaixo representa a falha de navegação original.
+    }
+    const currentUrl = finalUrlFromObservation(observation);
+    let reachedTargetOrigin = false;
+    try {
+      reachedTargetOrigin =
+        Boolean(currentUrl) && new URL(currentUrl).origin === new URL(url).origin;
+    } catch {
+      reachedTargetOrigin = false;
+    }
+    if (reachedTargetOrigin) {
+      return { observation, recovered: true };
+    }
+
+    const navigationError = new Error(
+      'A URL do sistema não respondeu em até 60 segundos. Confirme o endereço informado, a conexão com a VPN e tente novamente.'
+    );
+    navigationError.code = 'AUTOMATION_NAVIGATION_TIMEOUT';
+    navigationError.observation = observation;
+    throw navigationError;
+  }
+}
+
 function normalizedObservation(value) {
   return String(value || '')
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase();
+}
+
+export function loginCredentialTargets(observation) {
+  const fields = [
+    ...String(observation || '').matchAll(
+      /(?:textbox|combobox)\s+["']([^"'\r\n]+)["'][^\r\n]*?\[ref=([^\]\s]+)\]/giu
+    ),
+  ].map((match) => ({
+    name: match[1],
+    target: match[2],
+    normalizedName: normalizedObservation(match[1]),
+  }));
+  const username = fields.find((field) =>
+    /\b(usuario|user(?:name)?|login|e-?mail|cpf|matricula|identificador)\b/.test(
+      field.normalizedName
+    )
+  );
+  const password = fields.find((field) =>
+    /\b(senha|password|passcode|pwd)\b/.test(field.normalizedName)
+  );
+  return username && password ? { username, password } : null;
+}
+
+export function normalizeBrowserToolArguments(tool, args = {}) {
+  const normalized =
+    args && typeof args === 'object' && !Array.isArray(args)
+      ? JSON.parse(JSON.stringify(args))
+      : {};
+  const normalizeTarget = (value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+    if (!value.target && value.ref) value.target = value.ref;
+    delete value.ref;
+  };
+
+  normalizeTarget(normalized);
+  if (tool === 'browser_fill_form' && Array.isArray(normalized.fields)) {
+    for (const field of normalized.fields) {
+      normalizeTarget(field);
+      if (['text', 'input', 'password'].includes(String(field?.type || '').toLowerCase())) {
+        field.type = 'textbox';
+      }
+    }
+  }
+  return normalized;
+}
+
+export function loginSubmissionAction(observation) {
+  const buttonPattern =
+    /button\s+["']([^"'\r\n]*(?:entrar|acessar|login|sign in|continuar|autenticar)[^"'\r\n]*)["'][^\r\n]*?\[ref=([^\]\s]+)\]/giu;
+  const match = buttonPattern.exec(String(observation || ''));
+  if (match) {
+    return {
+      tool: 'browser_click',
+      arguments: {
+        element: `Botão ${match[1]}`,
+        target: match[2],
+      },
+      step: `Clicar em ${match[1]}`,
+    };
+  }
+  return {
+    tool: 'browser_press_key',
+    arguments: { key: 'Enter' },
+    step: 'Pressionar Enter para entrar',
+  };
 }
 
 export function authenticationObservationState(observation) {
@@ -339,13 +447,6 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
   let repeatedActionCount = 0;
   let previousActionSignature = '';
   let lastStep = 'Abrir a tela de login';
-  let observation = await currentBrowserObservation(
-    browser,
-    secrets,
-    await browser.call('browser_navigate', { url: job.run.target.loginUrl })
-  );
-  ensureObservationOrigin(observation, job.allowedOrigins);
-
   await updateRun(job, {
     current: {
       cardCode: '',
@@ -358,6 +459,143 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
       message: 'Realizando autenticação antes de iniciar os cenários.',
     },
   });
+
+  let navigation;
+  try {
+    navigation = await navigateWithRecovery({
+      browser,
+      url: job.run.target.loginUrl,
+      secrets,
+    });
+  } catch (error) {
+    if (error.code === 'AUTOMATION_NAVIGATION_TIMEOUT') {
+      throw authenticationError(
+        error.message,
+        'AUTOMATION_LOGIN_NAVIGATION_TIMEOUT',
+        {
+          observation: error.observation || '',
+          lastStep,
+        }
+      );
+    }
+    throw error;
+  }
+  let observation = navigation.observation;
+  ensureObservationOrigin(observation, job.allowedOrigins);
+  if (navigation.recovered) {
+    await updateRun(job, {
+      event: {
+        level: 'warning',
+        message:
+          'A abertura da página excedeu o tempo normal, mas o Runner recuperou o snapshot e continuará a autenticação.',
+      },
+    });
+  }
+
+  const credentialTargets = loginCredentialTargets(observation);
+  if (credentialTargets) {
+    try {
+      lastStep = `Preencher ${credentialTargets.username.name}`;
+      await updateRun(job, {
+        current: {
+          cardCode: '',
+          scenarioId,
+          scenarioCode: '',
+          step: `Login: ${lastStep}`,
+        },
+        event: { level: 'info', message: `Login — ${lastStep}` },
+      });
+      const usernameResult = await browser.call('browser_type', {
+        element: `Campo ${credentialTargets.username.name}`,
+        target: credentialTargets.username.target,
+        text: secrets.username,
+      });
+      credentialUsage.username = true;
+      observation = await currentBrowserObservation(browser, secrets, usernameResult);
+      ensureObservationOrigin(observation, job.allowedOrigins);
+
+      const refreshedTargets = loginCredentialTargets(observation) || credentialTargets;
+      lastStep = `Preencher ${refreshedTargets.password.name} e entrar`;
+      await updateRun(job, {
+        current: {
+          cardCode: '',
+          scenarioId,
+          scenarioCode: '',
+          step: `Login: ${lastStep}`,
+        },
+        event: { level: 'info', message: `Login — ${lastStep}` },
+      });
+      const passwordResult = await browser.call('browser_type', {
+        element: `Campo ${refreshedTargets.password.name}`,
+        target: refreshedTargets.password.target,
+        text: secrets.password,
+        submit: true,
+      });
+      credentialUsage.password = true;
+      submitted = true;
+      observation = await currentBrowserObservation(browser, secrets, passwordResult);
+      ensureObservationOrigin(observation, job.allowedOrigins);
+
+      let loginState = authenticationObservationState(observation);
+      const submitAction = loginSubmissionAction(observation);
+      if (loginState.loginFormVisible && submitAction.tool === 'browser_click') {
+        lastStep = submitAction.step;
+        await updateRun(job, {
+          current: {
+            cardCode: '',
+            scenarioId,
+            scenarioCode: '',
+            step: `Login: ${lastStep}`,
+          },
+          event: { level: 'info', message: `Login — ${lastStep}` },
+        });
+        const submitResult = await browser.call(
+          submitAction.tool,
+          submitAction.arguments
+        );
+        observation = await currentBrowserObservation(browser, secrets, submitResult);
+        ensureObservationOrigin(observation, job.allowedOrigins);
+        loginState = authenticationObservationState(observation);
+      }
+
+      if (loginState.hasAdditionalChallenge) {
+        throw authenticationError(
+          'O sistema solicitou captcha, código de verificação ou autenticação adicional. Essa etapa precisa ser concluída pelo QA.',
+          'AUTOMATION_LOGIN_ADDITIONAL_CHALLENGE',
+          { observation, lastStep }
+        );
+      }
+      if (loginState.hasLoginError) {
+        throw authenticationError(
+          'O sistema recusou as credenciais informadas. Confirme o usuário e a senha do ambiente testado.',
+          'AUTOMATION_LOGIN_REJECTED',
+          { observation, lastStep }
+        );
+      }
+      if (authenticationSucceeded({ observation, credentialUsage, submitted })) {
+        await updateRun(job, {
+          event: {
+            level: 'success',
+            message: 'Autenticação confirmada pelo desaparecimento do formulário de login.',
+          },
+        });
+        return;
+      }
+      throw authenticationError(
+        'O formulário de login permaneceu aberto depois do preenchimento e do envio. Confirme as credenciais ou verifique se a tela exige uma etapa adicional.',
+        'AUTOMATION_LOGIN_NO_PROGRESS',
+        { observation, lastStep }
+      );
+    } catch (error) {
+      if (String(error.code || '').startsWith('AUTOMATION_LOGIN_')) throw error;
+      const safeToolError = redactSecrets(error.message, secrets);
+      throw authenticationError(
+        `O Runner encontrou os campos de login, mas não conseguiu preenchê-los. Detalhe técnico: ${safeToolError}`,
+        'AUTOMATION_LOGIN_TOOL_FAILED',
+        { observation, lastStep }
+      );
+    }
+  }
 
   for (let stepNumber = 1; stepNumber <= 15; stepNumber += 1) {
     const state = await currentRun(job);
@@ -388,7 +626,11 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
     }
 
     lastStep = decision.step || decision.tool;
-    const protectedArgs = safeHistoryArguments(decision.arguments);
+    const normalizedArgs = normalizeBrowserToolArguments(
+      decision.tool,
+      decision.arguments
+    );
+    const protectedArgs = safeHistoryArguments(normalizedArgs);
     const actionSignature = JSON.stringify({
       tool: decision.tool,
       arguments: protectedArgs,
@@ -416,15 +658,15 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
         message: `Login — ${lastStep}`,
       },
     });
-    ensureAllowedNavigation(decision.tool, decision.arguments, job.allowedOrigins);
+    ensureAllowedNavigation(decision.tool, normalizedArgs, job.allowedOrigins);
     const secretPlacement = validateSecretPlacement({
       tool: decision.tool,
-      args: decision.arguments,
+      args: normalizedArgs,
       observation,
       loginUrl: job.run.target.loginUrl,
       usage: credentialUsage,
     });
-    const actualArgs = substituteSecrets(decision.arguments, secrets);
+    const actualArgs = substituteSecrets(normalizedArgs, secrets);
     let toolResult;
     try {
       toolResult = await browser.call(decision.tool, actualArgs);
@@ -441,7 +683,7 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
     }
     if (secretPlacement.usesUsername) credentialUsage.username = true;
     if (secretPlacement.usesPassword) credentialUsage.password = true;
-    if (isLoginSubmission(decision.tool, decision.arguments, lastStep)) submitted = true;
+    if (isLoginSubmission(decision.tool, normalizedArgs, lastStep)) submitted = true;
     observation = await currentBrowserObservation(browser, secrets, toolResult);
     ensureObservationOrigin(observation, job.allowedOrigins);
     history.push({
@@ -451,7 +693,42 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
       result: observation.slice(-4_000),
     });
 
-    const loginState = authenticationObservationState(observation);
+    let loginState = authenticationObservationState(observation);
+    if (
+      credentialUsage.username &&
+      credentialUsage.password &&
+      !submitted &&
+      loginState.loginFormVisible
+    ) {
+      const submitAction = loginSubmissionAction(observation);
+      lastStep = submitAction.step;
+      await updateRun(job, {
+        current: {
+          cardCode: '',
+          scenarioId,
+          scenarioCode: '',
+          step: `Login: ${lastStep}`,
+        },
+        event: {
+          level: 'info',
+          message: `Login — ${lastStep}`,
+        },
+      });
+      const submitResult = await browser.call(
+        submitAction.tool,
+        submitAction.arguments
+      );
+      submitted = true;
+      observation = await currentBrowserObservation(browser, secrets, submitResult);
+      ensureObservationOrigin(observation, job.allowedOrigins);
+      history.push({
+        step: `${stepNumber}.submit`,
+        tool: submitAction.tool,
+        arguments: safeHistoryArguments(submitAction.arguments),
+        result: observation.slice(-4_000),
+      });
+      loginState = authenticationObservationState(observation);
+    }
     if (submitted && loginState.hasAdditionalChallenge) {
       throw authenticationError(
         'O sistema solicitou captcha, código de verificação ou autenticação adicional. Essa etapa precisa ser concluída pelo QA.',
@@ -486,6 +763,7 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets }) {
 async function runScenario({ browser, job, card, scenario, secrets, outputDir, maxSteps }) {
   const startedAt = new Date().toISOString();
   const history = [];
+  const failedActions = new Map();
   let observation = '';
   let lastStep = 'Abrir o sistema';
   // A autenticação é feita uma única vez antes do lote. Credenciais não podem
@@ -506,11 +784,12 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
   });
 
   try {
-    observation = await currentBrowserObservation(
+    const navigation = await navigateWithRecovery({
       browser,
+      url: job.run.target.baseUrl,
       secrets,
-      await browser.call('browser_navigate', { url: job.run.target.baseUrl })
-    );
+    });
+    observation = navigation.observation;
     ensureObservationOrigin(observation, job.allowedOrigins);
 
     for (let stepNumber = 1; stepNumber <= maxSteps; stepNumber += 1) {
@@ -567,6 +846,10 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
       }
 
       lastStep = decision.step || decision.tool;
+      const normalizedArgs = normalizeBrowserToolArguments(
+        decision.tool,
+        decision.arguments
+      );
       await updateRun(job, {
         current: {
           cardCode: card.code,
@@ -575,30 +858,42 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
           step: lastStep,
         },
       });
-      ensureAllowedNavigation(decision.tool, decision.arguments, job.allowedOrigins);
+      ensureAllowedNavigation(decision.tool, normalizedArgs, job.allowedOrigins);
       const secretPlacement = validateSecretPlacement({
         tool: decision.tool,
-        args: decision.arguments,
+        args: normalizedArgs,
         observation,
         loginUrl: job.run.target.loginUrl,
         usage: credentialUsage,
       });
-      const protectedArgs = safeHistoryArguments(decision.arguments);
-      const actualArgs = substituteSecrets(decision.arguments, secrets);
+      const protectedArgs = safeHistoryArguments(normalizedArgs);
+      const actionSignature = JSON.stringify({
+        tool: decision.tool,
+        arguments: protectedArgs,
+      });
+      const actualArgs = substituteSecrets(normalizedArgs, secrets);
       let toolResult;
       try {
         toolResult = await browser.call(decision.tool, actualArgs);
       } catch (toolError) {
         const safeToolError = redactSecrets(toolError.message, secrets);
+        const failureCount = (failedActions.get(actionSignature) || 0) + 1;
+        failedActions.set(actionSignature, failureCount);
         history.push({
           step: stepNumber,
           tool: decision.tool,
           arguments: protectedArgs,
           error: safeToolError.slice(0, 1_000),
         });
+        if (failureCount >= 2) {
+          throw new Error(
+            `A ação "${lastStep}" falhou repetidamente. Detalhe técnico: ${safeToolError}`
+          );
+        }
         observation = `A ferramenta falhou: ${safeToolError}\n\n${observation}`;
         continue;
       }
+      failedActions.delete(actionSignature);
       if (secretPlacement.usesUsername) credentialUsage.username = true;
       if (secretPlacement.usesPassword) credentialUsage.password = true;
       observation = await currentBrowserObservation(browser, secrets, toolResult);
@@ -702,7 +997,16 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
 
   try {
     onLocalUpdate({ status: 'starting', message: 'Iniciando Playwright MCP...' });
-    await browser.start();
+    try {
+      await browser.start();
+    } catch (error) {
+      if (isMcpRequestTimeout(error)) {
+        throw new Error(
+          'O Playwright MCP demorou além do limite para iniciar. Feche outros navegadores automatizados e tente novamente.'
+        );
+      }
+      throw error;
+    }
     if (browser.hasTool('browser_start_tracing')) {
       await browser.call('browser_start_tracing').catch(() => {});
     }

@@ -30,17 +30,29 @@ if ($portLine) {
 
 Write-Host 'Preparando o PlanEvidences Runner...' -ForegroundColor Cyan
 $listeners = Get-NetTCPConnection -LocalPort $runnerPort -State Listen -ErrorAction SilentlyContinue
+$legacyRunnerDetected = $false
+try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:$runnerPort/health" -TimeoutSec 3
+    $legacyRunnerDetected = $health.name -eq 'PlanEvidences Runner Local'
+} catch {
+    $legacyRunnerDetected = $false
+}
 foreach ($processId in @($listeners | Select-Object -ExpandProperty OwningProcess -Unique)) {
     $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
     $processPath = $process.Path
     if (
-        $processPath -and
-        [System.IO.Path]::GetFullPath($processPath).StartsWith(
-            [System.IO.Path]::GetFullPath($installRoot),
-            [System.StringComparison]::OrdinalIgnoreCase
+        $legacyRunnerDetected -or
+        (
+            $processPath -and
+            [System.IO.Path]::GetFullPath($processPath).StartsWith(
+                [System.IO.Path]::GetFullPath($installRoot),
+                [System.StringComparison]::OrdinalIgnoreCase
+            )
         )
     ) {
+        Write-Host "Encerrando Runner anterior (processo $processId)..." -ForegroundColor Yellow
         Stop-Process -Id $processId -Force
+        Wait-Process -Id $processId -Timeout 10 -ErrorAction SilentlyContinue
     } else {
         throw "A porta local $runnerPort está sendo usada por outro programa. Feche-o e tente novamente."
     }
@@ -54,7 +66,12 @@ New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
 Copy-Item -Path (Join-Path $payloadRoot '*') -Destination $installRoot -Recurse -Force
 
 $shell = New-Object -ComObject WScript.Shell
-$startupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'PlanEvidences Runner.lnk'
+$startupDirectory = [Environment]::GetFolderPath('Startup')
+$legacyStartupShortcut = Join-Path $startupDirectory 'PlanEvidences Runner Local.lnk'
+if (Test-Path -LiteralPath $legacyStartupShortcut) {
+    Remove-Item -LiteralPath $legacyStartupShortcut -Force
+}
+$startupShortcut = Join-Path $startupDirectory 'PlanEvidences Runner.lnk'
 $shortcut = $shell.CreateShortcut($startupShortcut)
 $shortcut.TargetPath = Join-Path $env:WINDIR 'System32\wscript.exe'
 $shortcut.Arguments = "`"$(Join-Path $installRoot 'start-runner.vbs')`""

@@ -6,6 +6,11 @@ import {
   ensureAllowedNavigation,
   ensureObservationOrigin,
   isLoginSubmission,
+  isMcpRequestTimeout,
+  loginCredentialTargets,
+  loginSubmissionAction,
+  navigateWithRecovery,
+  normalizeBrowserToolArguments,
   redactSecrets,
   safeHistoryArguments,
   substituteSecrets,
@@ -161,4 +166,122 @@ test('identifica clique e Enter como envio do formulário de login', () => {
   );
   assert.equal(isLoginSubmission('browser_press_key', { key: 'Enter' }), true);
   assert.equal(isLoginSubmission('browser_click', { element: 'Mostrar senha' }), false);
+});
+
+test('converte referências antigas do modelo para o formato atual do Playwright MCP', () => {
+  assert.deepEqual(
+    normalizeBrowserToolArguments('browser_fill_form', {
+      fields: [
+        { name: 'Usuário', type: 'text', ref: 'e10', value: '{{USERNAME}}' },
+        { name: 'Senha', type: 'password', ref: 'e11', value: '{{PASSWORD}}' },
+      ],
+    }),
+    {
+      fields: [
+        { name: 'Usuário', type: 'textbox', target: 'e10', value: '{{USERNAME}}' },
+        { name: 'Senha', type: 'textbox', target: 'e11', value: '{{PASSWORD}}' },
+      ],
+    }
+  );
+});
+
+test('seleciona o botão de entrada após preencher as credenciais', () => {
+  assert.deepEqual(
+    loginSubmissionAction(`
+      - textbox "Usuário" [ref=e10]
+      - textbox "Senha" [ref=e11]
+      - button "Entrar no sistema" [ref=e12]
+    `),
+    {
+      tool: 'browser_click',
+      arguments: { element: 'Botão Entrar no sistema', target: 'e12' },
+      step: 'Clicar em Entrar no sistema',
+    }
+  );
+  assert.deepEqual(loginSubmissionAction('- textbox "Senha" [ref=e11]'), {
+    tool: 'browser_press_key',
+    arguments: { key: 'Enter' },
+    step: 'Pressionar Enter para entrar',
+  });
+});
+
+test('identifica diretamente os campos de usuário e senha no snapshot', () => {
+  assert.deepEqual(
+    loginCredentialTargets(`
+      - textbox "Usuário de acesso" [ref=e20]
+      - textbox "Senha" [ref=e21]
+      - button "Entrar" [ref=e22]
+    `),
+    {
+      username: {
+        name: 'Usuário de acesso',
+        target: 'e20',
+        normalizedName: 'usuario de acesso',
+      },
+      password: {
+        name: 'Senha',
+        target: 'e21',
+        normalizedName: 'senha',
+      },
+    }
+  );
+  assert.equal(
+    loginCredentialTargets('- textbox "Pesquisa" [ref=e30]'),
+    null
+  );
+});
+
+test('recupera o snapshot quando a navegação excede o tempo mas a página abriu', async () => {
+  const browser = {
+    hasTool: (name) => name === 'browser_snapshot',
+    call: async (name) => {
+      if (name === 'browser_navigate') {
+        throw new Error('MCP error -32001: Request timed out');
+      }
+      return {
+        content: [
+          {
+            type: 'text',
+            text: '### Page\n- Page URL: https://cliente.local/login\n- textbox "Usuário" [ref=e1]',
+          },
+        ],
+      };
+    },
+    readResultText: async (result) => result?.content?.[0]?.text || '',
+  };
+
+  assert.equal(isMcpRequestTimeout(new Error('Request timed out')), true);
+  const navigation = await navigateWithRecovery({
+    browser,
+    url: 'https://cliente.local/login',
+    secrets,
+  });
+  assert.equal(navigation.recovered, true);
+  assert.match(navigation.observation, /textbox "Usuário"/);
+});
+
+test('explica URL ou VPN quando nem o snapshot alcança o sistema', async () => {
+  const browser = {
+    hasTool: (name) => name === 'browser_snapshot',
+    call: async (name) => {
+      if (name === 'browser_navigate') {
+        throw new Error('MCP error -32001: Request timed out');
+      }
+      return {
+        content: [{ type: 'text', text: '### Page\n- Page URL: about:blank' }],
+      };
+    },
+    readResultText: async (result) => result?.content?.[0]?.text || '',
+  };
+
+  await assert.rejects(
+    navigateWithRecovery({
+      browser,
+      url: 'https://cliente.local/login',
+      secrets,
+    }),
+    (error) =>
+      error.code === 'AUTOMATION_NAVIGATION_TIMEOUT' &&
+      /endereço informado, a conexão com a VPN/.test(error.message)
+  );
 });

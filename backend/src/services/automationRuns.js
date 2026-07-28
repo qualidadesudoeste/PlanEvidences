@@ -4,6 +4,7 @@ const runs = new Map();
 const RUN_TTL_MS = 24 * 60 * 60_000;
 const RUNNER_TOKEN_TTL_MS = 8 * 60 * 60_000;
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+export const MINIMUM_RUNNER_VERSION = '0.1.1';
 
 function tokenHash(token) {
   return createHash('sha256').update(String(token)).digest('hex');
@@ -11,6 +12,24 @@ function tokenHash(token) {
 
 function cleanText(value, max = 500) {
   return String(value || '').replace(/\u0000/g, '').trim().slice(0, max);
+}
+
+function versionParts(value) {
+  return String(value || '')
+    .split('.')
+    .slice(0, 3)
+    .map((part) => Number.parseInt(part, 10))
+    .map((part) => (Number.isFinite(part) ? part : 0));
+}
+
+export function runnerVersionSupported(version) {
+  const received = versionParts(version);
+  const minimum = versionParts(MINIMUM_RUNNER_VERSION);
+  for (let index = 0; index < 3; index += 1) {
+    if ((received[index] || 0) > (minimum[index] || 0)) return true;
+    if ((received[index] || 0) < (minimum[index] || 0)) return false;
+  }
+  return true;
 }
 
 function validHttpUrl(value, fieldName) {
@@ -173,12 +192,25 @@ export function runnerRunPayload(run) {
 export function claimAutomationRun(run, runnerInfo = {}) {
   if (TERMINAL_STATUSES.has(run.status)) return publicRun(run);
   const now = new Date().toISOString();
+  const receivedVersion = cleanText(runnerInfo.version, 40) || 'desconhecida';
+  if (!runnerVersionSupported(receivedVersion)) {
+    const message = `Runner Local ${receivedVersion} desatualizado. Instale a versão ${MINIMUM_RUNNER_VERSION} ou superior antes de executar.`;
+    if (!run.events.some((event) => event.message === message)) {
+      run.events.push({ at: now, level: 'warning', message });
+    }
+    run.updatedAt = now;
+    const error = new Error(message);
+    error.status = 426;
+    error.code = 'AUTOMATION_RUNNER_UPDATE_REQUIRED';
+    error.detail = { receivedVersion, minimumVersion: MINIMUM_RUNNER_VERSION };
+    throw error;
+  }
   run.status = 'running';
   run.startedAt ||= now;
   run.updatedAt = now;
   run.runner = {
     name: cleanText(runnerInfo.name, 120) || 'Runner Local',
-    version: cleanText(runnerInfo.version, 40) || 'desconhecida',
+    version: receivedVersion,
     machine: cleanText(runnerInfo.machine, 200),
   };
   run.events.push({ at: now, level: 'info', message: 'Runner Local conectado.' });

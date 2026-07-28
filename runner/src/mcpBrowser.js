@@ -6,6 +6,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mcpCli = path.resolve(__dirname, '..', 'node_modules', '@playwright', 'mcp', 'cli.js');
+const MCP_START_TIMEOUT_MS = 150_000;
 
 export function resultText(result) {
   return (Array.isArray(result?.content) ? result.content : [])
@@ -51,6 +52,9 @@ export class McpBrowser {
       command: process.execPath,
       args,
       cwd: this.outputDir,
+      env: {
+        PW_TEST_SCREENSHOT_NO_FONTS_READY: '1',
+      },
       stderr: 'pipe',
     });
     this.transport.stderr?.on('data', (chunk) => {
@@ -61,8 +65,12 @@ export class McpBrowser {
       { name: 'planevidences-automation-runner', version: '0.1.1' },
       { capabilities: {} }
     );
-    await this.client.connect(this.transport);
-    const listed = await this.client.listTools();
+    const startOptions = {
+      timeout: MCP_START_TIMEOUT_MS,
+      maxTotalTimeout: MCP_START_TIMEOUT_MS,
+    };
+    await this.client.connect(this.transport, startOptions);
+    const listed = await this.client.listTools(undefined, startOptions);
     this.tools = listed.tools || [];
     return this.tools;
   }

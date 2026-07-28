@@ -10,5 +10,7 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo Instalacao concluida. Esta janela pode ser fechada.
-pause
+echo Instalacao concluida. O Runner continuara ativo em segundo plano.
+start "" "http://127.0.0.1:4317/"
+timeout /t 2 /nobreak >nul
+exit /b 0
