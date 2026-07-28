@@ -397,6 +397,9 @@ Responses API por etapa de login e por cenário. O Runner envia o snapshot
 acessível e um frame JPEG da página a cada turno, executa localmente as
 ferramentas Playwright MCP e devolve o resultado para a mesma sessão. Assim o
 agente mantém o plano, o contexto e consegue se recuperar de mudanças visuais.
+Depois de ações como entrar, salvar, excluir, pesquisar ou confirmar, o Runner
+aguarda por até 90 segundos o indicador de processamento desaparecer e exige
+dois snapshots estáveis antes de solicitar a próxima decisão da IA.
 
 As credenciais continuam restritas ao Runner: a IA recebe apenas os marcadores
 `{{USERNAME}}` e `{{PASSWORD}}`. Durante o login, o frame visual só é enviado
@@ -412,7 +415,7 @@ AUTOMATION_VISUAL_AGENT=true
 ```
 
 Sem uma chave OpenAI, Anthropic e Gemini continuam disponíveis no modo legado,
-sem memória visual persistente. O Runner 0.2.0 ou superior é obrigatório.
+sem memória visual persistente. O Runner 0.2.2 ou superior é obrigatório.
 
 ---
 

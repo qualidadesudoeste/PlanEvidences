@@ -65,6 +65,9 @@ Regras:
 - Use blocked quando login, permissão, ambiente ou dependência impedirem a conclusão.
 - Use not_automatable quando o cenário exigir ação física, validação externa ou julgamento visual que as ferramentas não consigam realizar.
 - Não declare falha apenas porque um elemento demorou; use browser_wait_for quando apropriado.
+- Depois de ações assíncronas, considere somente o estado estabilizado recebido do Runner. Se ainda
+  houver "Carregando", "Processando", "Salvando", "Excluindo", "Entrando" ou uma barra de progresso,
+  aguarde a conclusão antes de verificar o resultado esperado.
 - Se uma ação falhar ou não alterar a tela, inspecione novamente, tente uma alternativa segura e registre
   o bloqueio apenas depois de esgotar as alternativas compatíveis com o cenário.
 - Não repita indefinidamente a mesma ação.`;

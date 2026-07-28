@@ -86,6 +86,7 @@ $envContent = @(
     'RUNNER_PORT=4317'
     'RUNNER_HEADLESS=true'
     'RUNNER_MAX_STEPS=35'
+    'RUNNER_UI_SETTLE_TIMEOUT_MS=90000'
 )
 [System.IO.File]::WriteAllLines(
     (Join-Path $payloadRoot '.env'),

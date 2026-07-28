@@ -4,11 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import {
+  actionMayTriggerProcessing,
   authenticationObservationState,
   authenticationSucceeded,
   captureVisualFrame,
   ensureAllowedNavigation,
   ensureObservationOrigin,
+  hasLoadingIndicator,
   isLoginSubmission,
   isMcpRequestTimeout,
   loginCredentialTargets,
@@ -19,6 +21,8 @@ import {
   safeHistoryArguments,
   substituteSecrets,
   validateSecretPlacement,
+  waitForAuthenticationResponse,
+  waitForUiSettled,
 } from './executor.js';
 
 const secrets = { username: 'usuario.teste', password: 'test-passphrase-123' };
@@ -161,6 +165,132 @@ test('não confirma login com credencial recusada ou desafio adicional', () => {
     `).hasAdditionalChallenge,
     true
   );
+  assert.equal(
+    authenticationObservationState(`
+      ### Page
+      - text "Informe um CPF válido"
+      - textbox "CPF" [ref=e1]
+      - textbox "Senha" [ref=e2]
+    `).hasLoginError,
+    true
+  );
+});
+
+test('aguarda a transição assíncrona depois de enviar o login', async () => {
+  let snapshots = 0;
+  const browser = {
+    hasTool: (name) => name === 'browser_snapshot',
+    call: async () => {
+      snapshots += 1;
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `
+              ### Page
+              - Page URL: https://cliente.local/inicio
+              - heading "Bem-vindo" [ref=e10]
+            `,
+          },
+        ],
+      };
+    },
+    readResultText: async (result) => result?.content?.[0]?.text || '',
+  };
+  const result = await waitForAuthenticationResponse({
+    browser,
+    secrets,
+    allowedOrigins: ['https://cliente.local'],
+    observation: `
+      ### Page
+      - Page URL: https://cliente.local/login
+      - textbox "CPF" [ref=e1]
+      - textbox "Senha" [ref=e2]
+      - button "Entrar" [ref=e3]
+    `,
+    attempts: 2,
+    intervalMs: 1,
+  });
+  assert.equal(snapshots, 3);
+  assert.match(result, /Bem-vindo/);
+});
+
+test('reconhece barras e textos de processamento após ações assíncronas', () => {
+  assert.equal(
+    hasLoadingIndicator('- progressbar "Carregando" [ref=e1]'),
+    true
+  );
+  assert.equal(
+    hasLoadingIndicator('- button "Entrando..." [ref=e2]'),
+    true
+  );
+  assert.equal(hasLoadingIndicator('- heading "Consulta concluída"'), false);
+  assert.equal(actionMayTriggerProcessing('browser_click', {}, 'Clicar em Salvar'), true);
+  assert.equal(
+    actionMayTriggerProcessing('browser_press_key', { key: 'Enter' }, ''),
+    true
+  );
+  assert.equal(actionMayTriggerProcessing('browser_type', { submit: false }, ''), false);
+});
+
+test('só libera a próxima decisão depois que o carregamento desaparece e a tela estabiliza', async () => {
+  const observations = [
+    '- progressbar "Carregando" [ref=e1]\n- button "Salvando..." [ref=e2]',
+    '- heading "Registro salvo" [ref=e3]',
+    '- heading "Registro salvo" [ref=e4]',
+    '- heading "Registro salvo" [ref=e5]',
+  ];
+  let index = 0;
+  const browser = {
+    hasTool: (name) => name === 'browser_snapshot',
+    call: async () => ({
+      content: [{ type: 'text', text: observations[Math.min(index++, observations.length - 1)] }],
+    }),
+    readResultText: async (result) => result?.content?.[0]?.text || '',
+  };
+  const settled = await waitForUiSettled({
+    browser,
+    secrets,
+    allowedOrigins: ['https://cliente.local'],
+    observation: observations[0],
+    maxWaitMs: 100,
+    pollMs: 1,
+    stablePolls: 1,
+  });
+  assert.equal(settled.loadingSeen, true);
+  assert.equal(settled.timedOut, false);
+  assert.match(settled.observation, /Registro salvo/);
+});
+
+test('detecta a barra visual no DOM mesmo quando ela não aparece no snapshot acessível', async () => {
+  let evaluations = 0;
+  const browser = {
+    hasTool: (name) => ['browser_snapshot', 'browser_evaluate'].includes(name),
+    call: async (name) => {
+      if (name === 'browser_evaluate') {
+        evaluations += 1;
+        return {
+          content: [{ type: 'text', text: evaluations < 3 ? '### Result\ntrue' : '### Result\nfalse' }],
+        };
+      }
+      return {
+        content: [{ type: 'text', text: '- heading "Tela estável" [ref=e1]' }],
+      };
+    },
+    readResultText: async (result) => result?.content?.[0]?.text || '',
+  };
+  const settled = await waitForUiSettled({
+    browser,
+    secrets,
+    allowedOrigins: ['https://cliente.local'],
+    observation: '- heading "Tela estável" [ref=e1]',
+    maxWaitMs: 100,
+    pollMs: 1,
+    stablePolls: 1,
+  });
+  assert.equal(evaluations, 3);
+  assert.equal(settled.loadingSeen, true);
+  assert.equal(settled.timedOut, false);
 });
 
 test('identifica clique e Enter como envio do formulário de login', () => {

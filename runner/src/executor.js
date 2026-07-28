@@ -3,7 +3,11 @@ import path from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
 import { McpBrowser } from './mcpBrowser.js';
 
-const RUNNER_VERSION = '0.2.0';
+const RUNNER_VERSION = '0.2.2';
+const UI_SETTLE_TIMEOUT_MS = Math.max(
+  10_000,
+  Math.min(180_000, Number(process.env.RUNNER_UI_SETTLE_TIMEOUT_MS) || 90_000)
+);
 
 function apiHeaders(token, json = false) {
   return {
@@ -348,7 +352,7 @@ export function authenticationObservationState(observation) {
       normalized
     );
   const hasLoginError =
-    /\b(usuario ou senha invalido|credenciais invalidas|senha incorreta|acesso negado|login invalido|invalid credentials|incorrect password)\b/.test(
+    /\b(usuario ou senha invalido|credenciais invalidas|senha incorreta|acesso negado|login invalido|invalid credentials|incorrect password|cpf invalido|cpf deve|informe (?:um )?cpf valido|campo obrigatorio|preenchimento obrigatorio)\b/.test(
       normalized
     );
   return {
@@ -360,6 +364,226 @@ export function authenticationObservationState(observation) {
     hasLoginError,
     loginFormVisible: hasPasswordField && (hasUsernameField || hasLoginButton),
   };
+}
+
+export function hasLoadingIndicator(observation) {
+  const normalized = normalizedObservation(observation);
+  return (
+    /\b(progressbar|aria-busy\s*=\s*["']?true|carregando|processando|salvando|excluindo|entrando|aguarde|loading|processing|submitting)\b/.test(
+      normalized
+    ) ||
+    /\bbutton\s+["'][^"']*(?:\.\.\.|…)[^"']*["']/.test(normalized)
+  );
+}
+
+function settledObservationSignature(observation) {
+  return normalizedObservation(observation)
+    .replace(/\[ref=[^\]]+\]/g, '[ref]')
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, '[hora]')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function actionMayTriggerProcessing(tool, args = {}, step = '') {
+  if (
+    ['browser_click', 'browser_select_option', 'browser_check', 'browser_uncheck'].includes(
+      tool
+    )
+  ) {
+    return true;
+  }
+  if (
+    tool === 'browser_press_key' &&
+    /^(?:enter|control\+enter|meta\+enter)$/i.test(String(args.key || ''))
+  ) {
+    return true;
+  }
+  if (tool === 'browser_type' && args.submit === true) return true;
+  return /\b(entrar|salvar|excluir|confirmar|enviar|pesquisar|consultar|emitir|gerar|processar)\b/i.test(
+    step
+  );
+}
+
+async function browserHasActiveLoadingIndicator(browser) {
+  if (!browser.hasTool('browser_evaluate')) return false;
+  try {
+    const result = await browser.call('browser_evaluate', {
+      function: `() => {
+        const selectors = [
+          '#nprogress',
+          '.nprogress',
+          'ng-progress',
+          '.ng-progress-bar',
+          '.ngx-progress-bar',
+          'mat-progress-bar',
+          '.mat-progress-bar',
+          '.p-progressbar',
+          '[role="progressbar"]',
+          '[aria-busy="true"]',
+          '.loading-overlay',
+          '.spinner-overlay'
+        ];
+        const visible = (element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            Number(style.opacity || 1) > 0 &&
+            rect.width > 0 &&
+            rect.height > 0;
+        };
+        const indicator = selectors
+          .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+          .find(visible);
+        const busyButton = Array.from(document.querySelectorAll('button'))
+          .filter(visible)
+          .some((button) =>
+            /carregando|processando|salvando|excluindo|entrando|aguarde|loading|processing|submitting/i
+              .test(button.innerText || button.textContent || '')
+          );
+        return Boolean(indicator || busyButton || document.readyState !== 'complete');
+      }`,
+    });
+    const text = await browser.readResultText(result);
+    return /(?:### Result\s*)?\btrue\b/i.test(text);
+  } catch {
+    return false;
+  }
+}
+
+export async function waitForUiSettled({
+  browser,
+  secrets,
+  allowedOrigins,
+  observation,
+  maxWaitMs = UI_SETTLE_TIMEOUT_MS,
+  pollMs = 750,
+  stablePolls = 2,
+}) {
+  const startedAt = Date.now();
+  let currentObservation = observation;
+  let previousSignature = '';
+  let stableCount = 0;
+  let loadingSeen = hasLoadingIndicator(currentObservation);
+
+  while (Date.now() - startedAt < maxWaitMs) {
+    const signature = settledObservationSignature(currentObservation);
+    const loading = hasLoadingIndicator(currentObservation);
+    loadingSeen ||= loading;
+    if (!loading && signature && signature === previousSignature) {
+      stableCount += 1;
+      if (stableCount >= stablePolls) {
+        const domLoading = await browserHasActiveLoadingIndicator(browser);
+        loadingSeen ||= domLoading;
+        if (!domLoading) {
+          return { observation: currentObservation, loadingSeen, timedOut: false };
+        }
+        stableCount = 0;
+      }
+    } else {
+      stableCount = 0;
+    }
+    previousSignature = signature;
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    try {
+      currentObservation = await currentBrowserObservation(browser, secrets);
+      ensureObservationOrigin(currentObservation, allowedOrigins);
+    } catch {
+      // Mantém o último snapshot válido e tenta novamente até o limite.
+    }
+  }
+  return { observation: currentObservation, loadingSeen, timedOut: true };
+}
+
+export async function waitForAuthenticationResponse({
+  browser,
+  secrets,
+  allowedOrigins,
+  observation,
+  attempts = 4,
+  intervalMs = 1_000,
+}) {
+  const settled = await waitForUiSettled({
+    browser,
+    secrets,
+    allowedOrigins,
+    observation,
+    maxWaitMs: UI_SETTLE_TIMEOUT_MS,
+    pollMs: Math.min(750, Math.max(1, intervalMs)),
+  });
+  let currentObservation = settled.observation;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const state = authenticationObservationState(currentObservation);
+    if (
+      !state.loginFormVisible ||
+      state.hasLoginError ||
+      state.hasAdditionalChallenge
+    ) {
+      return currentObservation;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    currentObservation = await currentBrowserObservation(browser, secrets);
+    ensureObservationOrigin(currentObservation, allowedOrigins);
+  }
+  return currentObservation;
+}
+
+async function retryLoginWithSlowTyping({
+  browser,
+  job,
+  secrets,
+  observation,
+}) {
+  const targets = loginCredentialTargets(observation);
+  if (!targets) return { attempted: false, observation };
+
+  await updateRun(job, {
+    event: {
+      level: 'warning',
+      message:
+        'A tela de login permaneceu aberta. O Runner tentará novamente com digitação compatível com campos formatados.',
+    },
+  });
+  const usernameResult = await browser.call('browser_type', {
+    element: `Campo ${targets.username.name}`,
+    target: targets.username.target,
+    text: secrets.username,
+    slowly: true,
+  });
+  let nextObservation = await currentBrowserObservation(
+    browser,
+    secrets,
+    usernameResult
+  );
+  const refreshedTargets = loginCredentialTargets(nextObservation) || targets;
+  const passwordResult = await browser.call('browser_type', {
+    element: `Campo ${refreshedTargets.password.name}`,
+    target: refreshedTargets.password.target,
+    text: secrets.password,
+    slowly: true,
+  });
+  nextObservation = await currentBrowserObservation(
+    browser,
+    secrets,
+    passwordResult
+  );
+  const submitAction = loginSubmissionAction(nextObservation);
+  const submitResult = await browser.call(
+    submitAction.tool,
+    submitAction.arguments
+  );
+  nextObservation = await currentBrowserObservation(
+    browser,
+    secrets,
+    submitResult
+  );
+  nextObservation = await waitForAuthenticationResponse({
+    browser,
+    secrets,
+    allowedOrigins: job.allowedOrigins,
+    observation: nextObservation,
+  });
+  return { attempted: true, observation: nextObservation };
 }
 
 export function isLoginSubmission(tool, args, step = '') {
@@ -628,10 +852,21 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDi
       submitted = true;
       observation = await currentBrowserObservation(browser, secrets, passwordResult);
       ensureObservationOrigin(observation, job.allowedOrigins);
+      observation = await waitForAuthenticationResponse({
+        browser,
+        secrets,
+        allowedOrigins: job.allowedOrigins,
+        observation,
+      });
 
       let loginState = authenticationObservationState(observation);
       const submitAction = loginSubmissionAction(observation);
-      if (loginState.loginFormVisible && submitAction.tool === 'browser_click') {
+      if (
+        loginState.loginFormVisible &&
+        !loginState.hasLoginError &&
+        !loginState.hasAdditionalChallenge &&
+        submitAction.tool === 'browser_click'
+      ) {
         lastStep = submitAction.step;
         await updateRun(job, {
           current: {
@@ -648,6 +883,27 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDi
         );
         observation = await currentBrowserObservation(browser, secrets, submitResult);
         ensureObservationOrigin(observation, job.allowedOrigins);
+        observation = await waitForAuthenticationResponse({
+          browser,
+          secrets,
+          allowedOrigins: job.allowedOrigins,
+          observation,
+        });
+        loginState = authenticationObservationState(observation);
+      }
+
+      if (
+        loginState.loginFormVisible &&
+        !loginState.hasAdditionalChallenge &&
+        !loginState.hasLoginError
+      ) {
+        const retry = await retryLoginWithSlowTyping({
+          browser,
+          job,
+          secrets,
+          observation,
+        });
+        observation = retry.observation;
         loginState = authenticationObservationState(observation);
       }
 
@@ -712,10 +968,55 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDi
     await announceAgentMode(job, decision);
     if (decision.type === 'complete') {
       if (decision.status === 'passed') {
+        const loginState = authenticationObservationState(observation);
+        if (loginState.loginFormVisible) {
+          history.push({
+            step: `${stepNumber}.verification`,
+            error:
+              'A IA tentou concluir a autenticação, mas o formulário de login continua visível.',
+          });
+          continue;
+        }
         await updateRun(job, {
           event: { level: 'success', message: 'Autenticação concluída com sucesso.' },
         });
         return;
+      }
+      let loginState = authenticationObservationState(observation);
+      if (
+        credentialUsage.username &&
+        credentialUsage.password &&
+        submitted &&
+        loginState.loginFormVisible &&
+        !loginState.hasAdditionalChallenge &&
+        !loginState.hasLoginError
+      ) {
+        const retry = await retryLoginWithSlowTyping({
+          browser,
+          job,
+          secrets,
+          observation,
+        });
+        if (retry.attempted) {
+          observation = retry.observation;
+          loginState = authenticationObservationState(observation);
+          if (authenticationSucceeded({ observation, credentialUsage, submitted })) {
+            await updateRun(job, {
+              event: {
+                level: 'success',
+                message: 'Autenticação confirmada após a tentativa compatível.',
+              },
+            });
+            return;
+          }
+          if (loginState.hasLoginError) {
+            throw authenticationError(
+              'O sistema rejeitou os dados informados ou exibiu uma validação no formulário. Confirme se o usuário deve ser um CPF válido e verifique a senha.',
+              'AUTOMATION_LOGIN_REJECTED',
+              { observation, lastStep }
+            );
+          }
+        }
       }
       throw authenticationError(
         decision.actualResult ||
@@ -785,9 +1086,22 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDi
     }
     if (secretPlacement.usesUsername) credentialUsage.username = true;
     if (secretPlacement.usesPassword) credentialUsage.password = true;
-    if (isLoginSubmission(decision.tool, normalizedArgs, lastStep)) submitted = true;
+    const submittedByDecision = isLoginSubmission(
+      decision.tool,
+      normalizedArgs,
+      lastStep
+    );
+    if (submittedByDecision) submitted = true;
     observation = await currentBrowserObservation(browser, secrets, toolResult);
     ensureObservationOrigin(observation, job.allowedOrigins);
+    if (submittedByDecision) {
+      observation = await waitForAuthenticationResponse({
+        browser,
+        secrets,
+        allowedOrigins: job.allowedOrigins,
+        observation,
+      });
+    }
     history.push({
       step: stepNumber,
       tool: decision.tool,
@@ -823,6 +1137,12 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDi
       submitted = true;
       observation = await currentBrowserObservation(browser, secrets, submitResult);
       ensureObservationOrigin(observation, job.allowedOrigins);
+      observation = await waitForAuthenticationResponse({
+        browser,
+        secrets,
+        allowedOrigins: job.allowedOrigins,
+        observation,
+      });
       history.push({
         step: `${stepNumber}.submit`,
         tool: submitAction.tool,
@@ -1004,6 +1324,25 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
       if (secretPlacement.usesPassword) credentialUsage.password = true;
       observation = await currentBrowserObservation(browser, secrets, toolResult);
       ensureObservationOrigin(observation, job.allowedOrigins);
+      if (actionMayTriggerProcessing(decision.tool, normalizedArgs, lastStep)) {
+        const settled = await waitForUiSettled({
+          browser,
+          secrets,
+          allowedOrigins: job.allowedOrigins,
+          observation,
+        });
+        observation = settled.observation;
+        if (settled.loadingSeen) {
+          await updateRun(job, {
+            event: {
+              level: settled.timedOut ? 'warning' : 'info',
+              message: settled.timedOut
+                ? `O indicador de processamento permaneceu ativo após "${lastStep}". O agente continuará com o último estado disponível.`
+                : `Processamento concluído após "${lastStep}".`,
+            },
+          });
+        }
+      }
       history.push({
         step: stepNumber,
         tool: decision.tool,

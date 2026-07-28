@@ -58,7 +58,7 @@ test('isola o lote por usuário e contabiliza resultados por cenário', () => {
   const created = createBatch();
   assert.equal(getAutomationRunForUser(created.run.id, 'outro-qa'), null);
   const internal = authorizedRunnerRun(created.run.id, created.runnerToken);
-  claimAutomationRun(internal, { name: 'Runner', version: '0.2.0', machine: 'QA-PC' });
+  claimAutomationRun(internal, { name: 'Runner', version: '0.2.2', machine: 'QA-PC' });
   const updated = updateAutomationRun(internal, {
     result: {
       cardCode: '113684',
@@ -84,13 +84,15 @@ test('recusa Runner antigo e mantém o lote disponível para reconexão após at
   assert.equal(runnerVersionSupported('0.1.0'), false);
   assert.equal(runnerVersionSupported('0.1.1'), false);
   assert.equal(runnerVersionSupported('0.1.2'), false);
-  assert.equal(runnerVersionSupported('0.2.0'), true);
+  assert.equal(runnerVersionSupported('0.2.0'), false);
+  assert.equal(runnerVersionSupported('0.2.1'), false);
+  assert.equal(runnerVersionSupported('0.2.2'), true);
   assert.throws(
     () => claimAutomationRun(internal, { name: 'Runner antigo', version: '0.1.1' }),
     (error) =>
       error.status === 426 &&
       error.code === 'AUTOMATION_RUNNER_UPDATE_REQUIRED' &&
-      /versão 0\.2\.0 ou superior/.test(error.message)
+      /versão 0\.2\.2 ou superior/.test(error.message)
   );
   const run = getAutomationRunForUser(created.run.id, 'qa-42');
   assert.equal(run.status, 'waiting_runner');
