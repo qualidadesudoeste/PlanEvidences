@@ -3,11 +3,13 @@ import path from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
 import { McpBrowser } from './mcpBrowser.js';
 
-const RUNNER_VERSION = '0.2.3';
+const RUNNER_VERSION = '0.2.6';
 const UI_SETTLE_TIMEOUT_MS = Math.max(
   10_000,
   Math.min(180_000, Number(process.env.RUNNER_UI_SETTLE_TIMEOUT_MS) || 90_000)
 );
+const SERVER_REQUEST_TIMEOUT_MS = 180_000;
+const SERVER_REQUEST_ATTEMPTS = 5;
 
 function apiHeaders(token, json = false) {
   return {
@@ -16,25 +18,70 @@ function apiHeaders(token, json = false) {
   };
 }
 
-async function serverRequest(job, pathname, options = {}) {
-  const response = await fetch(`${job.serverUrl}${pathname}`, {
-    ...options,
-    headers: {
-      ...apiHeaders(job.runnerToken, options.body && !(options.body instanceof FormData)),
-      ...(options.headers || {}),
-    },
-  });
-  const raw = await response.text();
-  let data = {};
-  try {
-    data = raw ? JSON.parse(raw) : {};
-  } catch {
-    // Mensagem amigável abaixo.
+export async function serverRequest(job, pathname, options = {}) {
+  const isMultipart = options.body instanceof FormData;
+  let lastError;
+  for (let attempt = 1; attempt <= SERVER_REQUEST_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), SERVER_REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${job.serverUrl}${pathname}`, {
+        ...options,
+        headers: {
+          ...apiHeaders(job.runnerToken, options.body && !isMultipart),
+          ...(options.headers || {}),
+        },
+        signal: controller.signal,
+      });
+      const raw = await response.text();
+      let data = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        // A mensagem amigável abaixo representa a resposta inválida.
+      }
+      if (response.ok) return data;
+
+      const error = new Error(
+        data.error || `PlanEvidences respondeu HTTP ${response.status}.`
+      );
+      error.status = response.status;
+      error.code = data.code || 'AUTOMATION_SERVER_RESPONSE_ERROR';
+      const retryable = [408, 429, 500, 502, 503, 504].includes(response.status);
+      if (!retryable || isMultipart || attempt === SERVER_REQUEST_ATTEMPTS) {
+        throw error;
+      }
+      lastError = error;
+    } catch (error) {
+      const networkFailure =
+        error?.name === 'AbortError' ||
+        /fetch failed|network|socket|econnreset|etimedout|terminated/i.test(
+          String(error?.message || '')
+        );
+      if (
+        (!networkFailure && ![408, 429, 500, 502, 503, 504].includes(error?.status)) ||
+        isMultipart ||
+        attempt === SERVER_REQUEST_ATTEMPTS
+      ) {
+        if (networkFailure) {
+          const unavailable = new Error(
+            'A comunicação com o PlanEvidences ou com o serviço de IA ficou indisponível após 5 tentativas. Verifique a rede e inicie uma nova execução.'
+          );
+          unavailable.code = 'AUTOMATION_SERVER_UNAVAILABLE';
+          unavailable.cause = error;
+          throw unavailable;
+        }
+        throw error;
+      }
+      lastError = error;
+    } finally {
+      clearTimeout(timeout);
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(8_000, 1_000 * 2 ** (attempt - 1)))
+    );
   }
-  if (!response.ok) {
-    throw new Error(data.error || `PlanEvidences respondeu HTTP ${response.status}.`);
-  }
-  return data;
+  throw lastError;
 }
 
 async function updateRun(job, update) {
@@ -369,10 +416,12 @@ export function authenticationObservationState(observation) {
 export function hasLoadingIndicator(observation) {
   const normalized = normalizedObservation(observation);
   return (
-    /\b(progressbar|aria-busy\s*=\s*["']?true|carregando|processando|salvando|excluindo|entrando|aguarde|loading|processing|submitting)\b/.test(
+    /\b(aria-busy\s*=\s*["']?true|carregando|processando|salvando|excluindo|entrando|aguarde|loading|processing|submitting)\b/.test(
       normalized
     ) ||
-    /\bbutton\s+["'][^"']*(?:\.\.\.|…)[^"']*["']/.test(normalized)
+    /\b(?:button|progressbar)\s+["'][^"']*(?:\.\.\.|…)[^"']*["']/.test(
+      normalized
+    )
   );
 }
 
@@ -385,13 +434,12 @@ function settledObservationSignature(observation) {
 }
 
 export function actionMayTriggerProcessing(tool, args = {}, step = '') {
-  if (
-    ['browser_click', 'browser_select_option', 'browser_check', 'browser_uncheck'].includes(
-      tool
-    )
-  ) {
-    return true;
-  }
+  const descriptor = `${step} ${args.element || ''} ${args.name || ''} ${args.text || ''}`;
+  const processingAction =
+    /\b(entrar|salvar|excluir|confirmar|enviar|pesquisar|buscar|filtrar|consultar|emitir|gerar|processar|inscrever|cadastrar|atualizar|reenviar|finalizar)\b/i.test(
+      descriptor
+    );
+  if (tool === 'browser_click') return processingAction;
   if (
     tool === 'browser_press_key' &&
     /^(?:enter|control\+enter|meta\+enter)$/i.test(String(args.key || ''))
@@ -399,9 +447,10 @@ export function actionMayTriggerProcessing(tool, args = {}, step = '') {
     return true;
   }
   if (tool === 'browser_type' && args.submit === true) return true;
-  return /\b(entrar|salvar|excluir|confirmar|enviar|pesquisar|consultar|emitir|gerar|processar)\b/i.test(
-    step
-  );
+  if (['browser_select_option', 'browser_check', 'browser_uncheck'].includes(tool)) {
+    return processingAction;
+  }
+  return false;
 }
 
 async function browserHasActiveLoadingIndicator(browser) {
@@ -415,10 +464,6 @@ async function browserHasActiveLoadingIndicator(browser) {
           'ng-progress',
           '.ng-progress-bar',
           '.ngx-progress-bar',
-          'mat-progress-bar',
-          '.mat-progress-bar',
-          '.p-progressbar',
-          '[role="progressbar"]',
           '[aria-busy="true"]',
           '.loading-overlay',
           '.spinner-overlay'
@@ -430,7 +475,11 @@ async function browserHasActiveLoadingIndicator(browser) {
             style.visibility !== 'hidden' &&
             Number(style.opacity || 1) > 0 &&
             rect.width > 0 &&
-            rect.height > 0;
+            rect.height > 0 &&
+            rect.bottom > 0 &&
+            rect.right > 0 &&
+            rect.top < innerHeight &&
+            rect.left < innerWidth;
         };
         const indicator = selectors
           .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
@@ -441,7 +490,7 @@ async function browserHasActiveLoadingIndicator(browser) {
             /carregando|processando|salvando|excluindo|entrando|aguarde|loading|processing|submitting/i
               .test(button.innerText || button.textContent || '')
           );
-        return Boolean(indicator || busyButton || document.readyState !== 'complete');
+        return Boolean(indicator || busyButton);
       }`,
     });
     const text = await browser.readResultText(result);
@@ -700,9 +749,15 @@ async function uploadEvidence(job, scenarioId, filePath) {
   return data.evidence;
 }
 
-async function captureFailureEvidence(browser, job, scenario, outputDir) {
+export async function captureScenarioEvidence(
+  browser,
+  job,
+  scenario,
+  outputDir,
+  evidenceKind = 'falha'
+) {
   const evidence = [];
-  const screenshotName = `falha-${scenario.code || scenario.id}-${Date.now()}.png`
+  const screenshotName = `${evidenceKind}-${scenario.code || scenario.id}-${Date.now()}.png`
     .replace(/[^a-zA-Z0-9._-]/g, '_');
   try {
     await browser.call('browser_take_screenshot', {
@@ -1297,11 +1352,15 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
       );
       await announceAgentMode(job, decision);
       if (decision.type === 'complete') {
-        const shouldCapture = decision.status !== 'passed';
-        const evidence = shouldCapture
-          ? await captureFailureEvidence(browser, job, scenario, outputDir)
-          : [];
-        const diagnostics = shouldCapture
+        const shouldCollectFailureDetails = decision.status !== 'passed';
+        const evidence = await captureScenarioEvidence(
+          browser,
+          job,
+          scenario,
+          outputDir,
+          decision.status === 'passed' ? 'aprovado' : 'falha'
+        );
+        const diagnostics = shouldCollectFailureDetails
           ? await collectFailureDiagnostics(browser, secrets)
           : { console: '', network: '' };
         return {
@@ -1402,7 +1461,7 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
       });
     }
 
-    const evidence = await captureFailureEvidence(browser, job, scenario, outputDir);
+    const evidence = await captureScenarioEvidence(browser, job, scenario, outputDir);
     const diagnostics = await collectFailureDiagnostics(browser, secrets);
     return {
       cardCode: card.code,
@@ -1422,7 +1481,7 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
     };
   } catch (error) {
     const safeError = redactSecrets(error.message, secrets);
-    const evidence = await captureFailureEvidence(browser, job, scenario, outputDir);
+    const evidence = await captureScenarioEvidence(browser, job, scenario, outputDir);
     const diagnostics = await collectFailureDiagnostics(browser, secrets);
     return {
       cardCode: card.code,
@@ -1582,7 +1641,7 @@ export async function executeAutomationJob(jobInput, onLocalUpdate = () => {}) {
   } catch (error) {
     const safeError = redactSecrets(error.message, secrets);
     if (String(error.code || '').startsWith('AUTOMATION_LOGIN_') && firstCard && firstScenario) {
-      const evidence = await captureFailureEvidence(
+      const evidence = await captureScenarioEvidence(
         browser,
         job,
         firstScenario,

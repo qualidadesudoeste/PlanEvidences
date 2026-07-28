@@ -62,7 +62,7 @@ export class McpBrowser {
       if (message) console.error(`[playwright-mcp] ${message}`);
     });
     this.client = new Client(
-      { name: 'planevidences-automation-runner', version: '0.2.3' },
+      { name: 'planevidences-automation-runner', version: '0.2.6' },
       { capabilities: {} }
     );
     const startOptions = {

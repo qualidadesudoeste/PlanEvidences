@@ -776,6 +776,40 @@ export default function Evidences() {
     }));
   }, []);
 
+  const attachApprovedAutomationEvidence = useCallback(
+    (result: AutomationScenarioResult) => {
+      if (result.status !== 'passed' || result.evidence.length === 0) return;
+
+      const targetScenario = project.scenarios.find(
+        (scenario) => scenario.id === result.scenarioId
+      );
+      if (!targetScenario) return;
+      const existingKeys = new Set(targetScenario.images.map((image) => image.key));
+      const newImages = result.evidence.filter((image) => !existingKeys.has(image.key));
+
+      setProject((current) => ({
+        ...current,
+        scenarios: current.scenarios.map((scenario) => {
+          if (scenario.id !== result.scenarioId) return scenario;
+          return {
+            ...scenario,
+            images: [...scenario.images, ...newImages],
+          };
+        }),
+      }));
+
+      toast({
+        variant: 'success',
+        title: newImages.length > 0 ? 'Evidência enviada ao Editor' : 'Evidência já anexada',
+        description:
+          newImages.length > 0
+            ? `O print de aprovação foi anexado ao cenário ${result.scenarioCode}.`
+            : `O cenário ${result.scenarioCode} já possui esse print.`,
+      });
+    },
+    [project.scenarios, toast]
+  );
+
   const undoDelete = useCallback(() => {
     const lastDeleted = deletedScenariosRef.current.pop();
     if (!lastDeleted) return;
@@ -1092,6 +1126,7 @@ export default function Evidences() {
           setBugScenarioId(result.scenarioId);
           setAutomationOpen(false);
         }}
+        onAttachApprovedEvidence={attachApprovedAutomationEvidence}
       />
 
       {bugScenario && (

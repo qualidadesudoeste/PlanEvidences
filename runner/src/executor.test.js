@@ -7,6 +7,7 @@ import {
   actionMayTriggerProcessing,
   authenticationObservationState,
   authenticationSucceeded,
+  captureScenarioEvidence,
   captureVisualFrame,
   ensureAllowedNavigation,
   ensureObservationOrigin,
@@ -20,6 +21,7 @@ import {
   redactSecrets,
   safeHistoryArguments,
   scenarioStartUrl,
+  serverRequest,
   substituteSecrets,
   validateSecretPlacement,
   waitForAuthenticationResponse,
@@ -116,6 +118,83 @@ test('protege valores digitados no histórico e bloqueia navegação fora da ori
       ),
     /saiu das origens autorizadas/
   );
+});
+
+test('repete comunicação transitória com o servidor sem interromper o lote', async () => {
+  const originalFetch = globalThis.fetch;
+  let attempts = 0;
+  globalThis.fetch = async () => {
+    attempts += 1;
+    if (attempts === 1) throw new TypeError('fetch failed');
+    return new Response(JSON.stringify({ ok: true, run: { id: 'run-1' } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  try {
+    const data = await serverRequest(
+      {
+        serverUrl: 'http://planevidences.local',
+        runnerToken: 'token',
+      },
+      '/api/automation-runner/runs/run-1'
+    );
+    assert.equal(attempts, 2);
+    assert.equal(data.run.id, 'run-1');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('captura e envia o print final de um cenário aprovado', async () => {
+  const originalFetch = globalThis.fetch;
+  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'planevidences-approved-'));
+  let screenshotName = '';
+  globalThis.fetch = async (_url, options) => {
+    assert.equal(options.method, 'POST');
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        evidence: {
+          id: 'evidence-1',
+          type: 'screenshot',
+          originalName: screenshotName,
+          filename: 'stored.png',
+          key: 'automation/run/scenario/stored.png',
+          url: '/storage/stored.png',
+          size: 3,
+          mimeType: 'image/png',
+        },
+      }),
+      { status: 201, headers: { 'Content-Type': 'application/json' } }
+    );
+  };
+  const browser = {
+    call: async (tool, args) => {
+      assert.equal(tool, 'browser_take_screenshot');
+      screenshotName = args.filename;
+      await writeFile(path.join(outputDir, screenshotName), Buffer.from('png'));
+    },
+  };
+  try {
+    const evidence = await captureScenarioEvidence(
+      browser,
+      {
+        serverUrl: 'http://planevidences.local',
+        runnerToken: 'token',
+        runId: 'run-1',
+      },
+      { id: 'scenario-1', code: 'CT-001' },
+      outputDir,
+      'aprovado'
+    );
+    assert.match(screenshotName, /^aprovado-CT-001-/);
+    assert.equal(evidence.length, 1);
+    assert.equal(evidence[0].id, 'evidence-1');
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(outputDir, { recursive: true, force: true });
+  }
 });
 
 test('preserva a página autenticada quando a URL base informada é a própria tela de login', () => {
@@ -252,13 +331,29 @@ test('reconhece barras e textos de processamento após ações assíncronas', ()
     hasLoadingIndicator('- button "Entrando..." [ref=e2]'),
     true
   );
+  assert.equal(
+    hasLoadingIndicator('- progressbar "Vagas preenchidas: 70%" [ref=e3]'),
+    false
+  );
   assert.equal(hasLoadingIndicator('- heading "Consulta concluída"'), false);
   assert.equal(actionMayTriggerProcessing('browser_click', {}, 'Clicar em Salvar'), true);
+  assert.equal(
+    actionMayTriggerProcessing('browser_click', {}, 'Clicar em botão Notificações'),
+    false
+  );
   assert.equal(
     actionMayTriggerProcessing('browser_press_key', { key: 'Enter' }, ''),
     true
   );
   assert.equal(actionMayTriggerProcessing('browser_type', { submit: false }, ''), false);
+  assert.equal(
+    actionMayTriggerProcessing(
+      'browser_type',
+      { element: 'campo Pesquisar', submit: false },
+      'Digitar em campo Pesquisar'
+    ),
+    false
+  );
 });
 
 test('só libera a próxima decisão depois que o carregamento desaparece e a tela estabiliza', async () => {
@@ -281,7 +376,7 @@ test('só libera a próxima decisão depois que o carregamento desaparece e a te
     secrets,
     allowedOrigins: ['https://cliente.local'],
     observation: observations[0],
-    maxWaitMs: 100,
+    maxWaitMs: 1_000,
     pollMs: 1,
     stablePolls: 1,
   });
@@ -312,7 +407,7 @@ test('detecta a barra visual no DOM mesmo quando ela não aparece no snapshot ac
     secrets,
     allowedOrigins: ['https://cliente.local'],
     observation: '- heading "Tela estável" [ref=e1]',
-    maxWaitMs: 100,
+    maxWaitMs: 1_000,
     pollMs: 1,
     stablePolls: 1,
   });

@@ -11,6 +11,7 @@ import {
   Play,
   RefreshCw,
   Square,
+  Upload,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ interface Props {
   evidenceProjectId: string | null;
   onClose: () => void;
   onCreateCorrective: (result: AutomationScenarioResult, runId: string) => void;
+  onAttachApprovedEvidence: (result: AutomationScenarioResult) => void;
 }
 
 const ACTIVE_RUN_KEY = 'planevidences-active-automation-run';
@@ -70,6 +72,7 @@ export function AutomationBatchModal({
   evidenceProjectId,
   onClose,
   onCreateCorrective,
+  onAttachApprovedEvidence,
 }: Props) {
   const { toast } = useToast();
   const groups = useMemo(
@@ -147,6 +150,15 @@ export function AutomationBatchModal({
   const selectEverything = () => {
     setSelected((current) =>
       current.size === allScenarioIds.length ? new Set() : new Set(allScenarioIds)
+    );
+  };
+
+  const approvedEvidenceAttached = (result: AutomationScenarioResult) => {
+    if (result.evidence.length === 0) return false;
+    const scenario = project.scenarios.find((item) => item.id === result.scenarioId);
+    if (!scenario) return false;
+    return result.evidence.every((evidence) =>
+      scenario.images.some((image) => image.key === evidence.key)
     );
   };
 
@@ -554,6 +566,24 @@ export function AutomationBatchModal({
                                   URL final <ExternalLink size={12} />
                                 </a>
                               )}
+                              {result.status === 'passed' && result.evidence.length > 0 && (
+                                <div className="automation-result-evidence">
+                                  {result.evidence.map((item) => (
+                                    <a
+                                      href={resolveAssetUrl(item.url)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      key={item.id}
+                                    >
+                                      <img
+                                        src={resolveAssetUrl(item.url)}
+                                        alt={item.originalName}
+                                      />
+                                      <span>{item.originalName}</span>
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                               {result.status !== 'passed' && (
                                 <details className="automation-result-details">
                                   <summary>Ver detalhes da execução</summary>
@@ -616,6 +646,23 @@ export function AutomationBatchModal({
                               onClick={() => onCreateCorrective(result, run.id)}
                             >
                               Gerar corretiva
+                            </Button>
+                          )}
+                          {result.status === 'passed' && result.evidence.length > 0 && (
+                            <Button
+                              size="sm"
+                              variant={approvedEvidenceAttached(result) ? 'secondary' : 'primary'}
+                              disabled={approvedEvidenceAttached(result)}
+                              onClick={() => onAttachApprovedEvidence(result)}
+                            >
+                              {approvedEvidenceAttached(result) ? (
+                                <CheckCircle2 size={14} />
+                              ) : (
+                                <Upload size={14} />
+                              )}
+                              {approvedEvidenceAttached(result)
+                                ? 'Evidência anexada'
+                                : 'Enviar ao Editor'}
                             </Button>
                           )}
                         </div>

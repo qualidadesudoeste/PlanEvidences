@@ -415,7 +415,7 @@ AUTOMATION_VISUAL_AGENT=true
 ```
 
 Sem uma chave OpenAI, Anthropic e Gemini continuam disponíveis no modo legado,
-sem memória visual persistente. O Runner 0.2.3 ou superior é obrigatório.
+sem memória visual persistente. O Runner 0.2.6 ou superior é obrigatório.
 
 ---
 
