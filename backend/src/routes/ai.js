@@ -37,6 +37,7 @@ function configuredAI(body = {}) {
   const envKeys = {
     anthropic: process.env.ANTHROPIC_API_KEY,
     openai: process.env.OPENAI_API_KEY,
+    groq: process.env.GROQ_API_KEY,
     gemini: process.env.GEMINI_API_KEY,
   };
   return {
@@ -75,18 +76,18 @@ function normalizeReproductionSteps(value) {
 router.get('/', (_req, res) => {
   const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
   const hasOpenAI = !!process.env.OPENAI_API_KEY;
+  const hasGroq = !!process.env.GROQ_API_KEY;
   const hasGemini = !!process.env.GEMINI_API_KEY;
 
-  // Quando o operador configura mais de uma key, OpenAI/Anthropic têm precedência
-  // sobre Gemini (são pagos — sinal de que o operador preferiu pagar e quer usar).
   let defaultProvider = null;
   if (hasOpenAI) defaultProvider = 'openai';
   else if (hasAnthropic) defaultProvider = 'anthropic';
+  else if (hasGroq) defaultProvider = 'groq';
   else if (hasGemini) defaultProvider = 'gemini';
 
   res.json({
-    serverConfigured: hasAnthropic || hasOpenAI || hasGemini,
-    providers: { anthropic: hasAnthropic, openai: hasOpenAI, gemini: hasGemini },
+    serverConfigured: hasAnthropic || hasOpenAI || hasGroq || hasGemini,
+    providers: { anthropic: hasAnthropic, openai: hasOpenAI, groq: hasGroq, gemini: hasGemini },
     defaultProvider,
   });
 });

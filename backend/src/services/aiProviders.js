@@ -173,6 +173,31 @@ async function callOpenAI({ apiKey, model, userPrompt, systemPrompt = SYSTEM_PRO
   return { texto: data.choices?.[0]?.message?.content || '', usage: data.usage };
 }
 
+async function callGroq({ apiKey, model, userPrompt, systemPrompt = SYSTEM_PROMPT }) {
+  const response = await fetchWithRetry(
+    'https://api.groq.com/openai/v1/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: model || 'openai/gpt-oss-120b',
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.4,
+      }),
+    },
+    'Groq'
+  );
+  const data = await response.json();
+  return { texto: data.choices?.[0]?.message?.content || '', usage: data.usage };
+}
+
 function toolArguments(value, providerName) {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value;
   try {
@@ -198,7 +223,10 @@ function normalizedTool(tool) {
   };
 }
 
-async function callOpenAITool({
+async function callOpenAICompatibleTool({
+  baseUrl,
+  providerName,
+  defaultModel,
   apiKey,
   model,
   userPrompt,
@@ -206,7 +234,7 @@ async function callOpenAITool({
   tools,
 }) {
   const response = await fetchWithRetry(
-    'https://api.openai.com/v1/chat/completions',
+    `${baseUrl}/chat/completions`,
     {
       method: 'POST',
       headers: {
@@ -214,7 +242,7 @@ async function callOpenAITool({
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: model || 'gpt-4o-mini',
+        model: model || defaultModel,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -235,23 +263,41 @@ async function callOpenAITool({
         temperature: 0.1,
       }),
     },
-    'OpenAI'
+    providerName
   );
   const data = await response.json();
   const call = data.choices?.[0]?.message?.tool_calls?.find(
     (item) => item?.type === 'function'
   );
   if (!call?.function?.name) {
-    const error = new Error('OpenAI não selecionou uma ferramenta para a próxima ação.');
+    const error = new Error(`${providerName} não selecionou uma ferramenta para a próxima ação.`);
     error.status = 502;
     error.code = 'AUTOMATION_TOOL_CALL_MISSING';
     throw error;
   }
   return {
     name: call.function.name,
-    arguments: toolArguments(call.function.arguments, 'OpenAI'),
+    arguments: toolArguments(call.function.arguments, providerName),
     usage: data.usage,
   };
+}
+
+async function callOpenAITool(opts) {
+  return callOpenAICompatibleTool({
+    ...opts,
+    baseUrl: 'https://api.openai.com/v1',
+    providerName: 'OpenAI',
+    defaultModel: 'gpt-4o-mini',
+  });
+}
+
+async function callGroqTool(opts) {
+  return callOpenAICompatibleTool({
+    ...opts,
+    baseUrl: 'https://api.groq.com/openai/v1',
+    providerName: 'Groq',
+    defaultModel: 'openai/gpt-oss-120b',
+  });
 }
 
 async function callAnthropicTool({
@@ -379,6 +425,9 @@ export async function callProviderTool({
   }
   if (provider === 'openai') {
     return callOpenAITool({ apiKey, model, userPrompt, systemPrompt, tools });
+  }
+  if (provider === 'groq') {
+    return callGroqTool({ apiKey, model, userPrompt, systemPrompt, tools });
   }
   if (provider === 'anthropic') {
     return callAnthropicTool({ apiKey, model, userPrompt, systemPrompt, tools });
@@ -542,5 +591,6 @@ export function extractJSON(texto) {
 export const PROVIDERS = {
   anthropic: callAnthropic,
   openai: callOpenAI,
+  groq: callGroq,
   gemini: callGemini,
 };

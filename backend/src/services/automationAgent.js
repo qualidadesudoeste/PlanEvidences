@@ -87,6 +87,13 @@ function configuredProvider() {
       model: process.env.AUTOMATION_ANTHROPIC_MODEL || process.env.ANTHROPIC_MODEL,
     };
   }
+  if (process.env.GROQ_API_KEY) {
+    return {
+      name: 'groq',
+      key: process.env.GROQ_API_KEY,
+      model: process.env.AUTOMATION_GROQ_MODEL || process.env.GROQ_MODEL,
+    };
+  }
   if (process.env.GEMINI_API_KEY) {
     return {
       name: 'gemini',
