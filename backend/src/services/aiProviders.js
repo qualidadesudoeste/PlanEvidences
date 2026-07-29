@@ -212,6 +212,19 @@ function toolArguments(value, providerName) {
   throw error;
 }
 
+const GEMINI_UNSUPPORTED_SCHEMA_KEYS = new Set(['$schema', 'additionalProperties', '$defs', 'definitions']);
+
+function sanitizeSchemaForGemini(schema) {
+  if (Array.isArray(schema)) return schema.map(sanitizeSchemaForGemini);
+  if (!schema || typeof schema !== 'object') return schema;
+  const result = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (GEMINI_UNSUPPORTED_SCHEMA_KEYS.has(key)) continue;
+    result[key] = sanitizeSchemaForGemini(value);
+  }
+  return result;
+}
+
 function normalizedTool(tool) {
   return {
     name: String(tool?.name || '').slice(0, 64),
@@ -369,7 +382,7 @@ async function callGeminiToolOnce({
     return {
       name: normalized.name,
       description: normalized.description,
-      parameters: normalized.inputSchema,
+      parameters: sanitizeSchemaForGemini(normalized.inputSchema),
     };
   });
   const response = await fetchWithRetry(
