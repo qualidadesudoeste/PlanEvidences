@@ -93,8 +93,25 @@ export function RegisterBugModal({
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [open, busy, onClose]);
 
+  const combinedErrorDescription = (() => {
+    const filled = errors.map((e) => e.trim()).filter((e) => e.length > 0);
+    if (filled.length === 0) return '';
+    if (filled.length === 1) return filled[0];
+    return filled.map((e, i) => `Erro ${i + 1}: ${e}`).join('\n\n');
+  })();
+
+  const updateError = (index: number, value: string) => {
+    setErrors((prev) => prev.map((e, i) => (i === index ? value : e)));
+  };
+
+  const addError = () => setErrors((prev) => [...prev, '']);
+
+  const removeError = (index: number) => {
+    setErrors((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const generate = async () => {
-    if (errorDescription.trim().length < 10) {
+    if (combinedErrorDescription.length < 10) {
       toast({
         variant: 'error',
         title: 'Descreva melhor o problema',
@@ -110,7 +127,7 @@ export function RegisterBugModal({
         hu: hu.trim(),
         screenPath: screenPath.trim(),
         screenUrl: screenUrl.trim(),
-        errorDescription: errorDescription.trim(),
+        errorDescription: combinedErrorDescription,
       });
       setCard(generated);
       setPublished(null);
@@ -263,16 +280,55 @@ export function RegisterBugModal({
                 <span className="label-hint">Cole a URL do sistema testado; a IA não inventará esse endereço.</span>
               </div>
               <div className="form-group full">
-                <label htmlFor="bug-description">Descrição do erro</label>
-                <textarea
-                  id="bug-description"
-                  rows={6}
-                  value={errorDescription}
-                  onChange={(event) => setErrorDescription(event.target.value)}
-                  placeholder="Descreva o que aconteceu durante a execução deste cenário."
-                  disabled={locked}
-                  autoFocus
-                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ margin: 0 }}>
+                    {errors.length === 1 ? 'Descrição do erro' : `Erros encontrados (${errors.length})`}
+                  </label>
+                  {!locked && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={addError}
+                      style={{ height: 26, fontSize: 12, padding: '0 10px', gap: 4 }}
+                    >
+                      <Plus size={13} /> Adicionar erro
+                    </Button>
+                  )}
+                </div>
+                {errors.map((err, index) => (
+                  <div key={index} style={{ position: 'relative', marginBottom: index < errors.length - 1 ? 10 : 0 }}>
+                    {errors.length > 1 && (
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                        Erro {index + 1}
+                      </div>
+                    )}
+                    <textarea
+                      id={index === 0 ? 'bug-description' : undefined}
+                      rows={4}
+                      value={err}
+                      onChange={(event) => updateError(index, event.target.value)}
+                      placeholder="Descreva o que aconteceu durante a execução deste cenário."
+                      disabled={locked}
+                      autoFocus={index === 0}
+                      style={{ width: '100%', paddingRight: errors.length > 1 && !locked ? 36 : undefined }}
+                    />
+                    {errors.length > 1 && !locked && (
+                      <button
+                        type="button"
+                        onClick={() => removeError(index)}
+                        title="Remover este erro"
+                        style={{
+                          position: 'absolute', top: errors.length > 1 ? 24 : 6, right: 8,
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          color: 'var(--text-secondary)', padding: 2, lineHeight: 1,
+                        }}
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
+                ))}
                 <span className="label-hint">A descrição original é preservada ao gerar novamente.</span>
               </div>
               <div className="form-group full">
