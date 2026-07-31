@@ -950,6 +950,29 @@ export default function Evidences() {
       toast({ variant: 'error', title: 'Dados incompletos', description: err });
       return;
     }
+
+    const semEvidencia = project.scenarios.filter((s) => s.images.length === 0);
+    if (semEvidencia.length > 0) {
+      const primeiro = semEvidencia[0];
+      const primeiroIdx = project.scenarios.findIndex((s) => s.id === primeiro.id);
+      const ctCode = `CT-${String(primeiroIdx + 1).padStart(3, '0')}`;
+
+      const el = document.getElementById(`scenario-${primeiro.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.transition = 'box-shadow 0.5s';
+        el.style.boxShadow = '0 0 0 4px rgba(239, 68, 68, 0.45)';
+        setTimeout(() => { el.style.boxShadow = ''; }, 2500);
+      }
+
+      const plural = semEvidencia.length > 1;
+      const msg =
+        `${semEvidencia.length} cenário${plural ? 's' : ''} sem evidência anexada.\n` +
+        `Primeiro: ${ctCode} — "${primeiro.title || 'Sem título'}"\n\n` +
+        `Deseja gerar o documento mesmo assim?`;
+      if (!window.confirm(msg)) return;
+    }
+
     setGenerating(true);
     setLastDoc(null);
     setProgress(10);

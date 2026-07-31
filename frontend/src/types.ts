@@ -8,7 +8,7 @@ export interface UploadedImage {
 }
 
 export interface CorrectiveAttachment extends UploadedImage {
-  mimeType: 'image/png' | 'image/jpeg';
+  mimeType: 'image/png' | 'image/jpeg' | 'video/mp4';
 }
 
 export interface Scenario {

@@ -11,24 +11,34 @@ import {
 } from '../services/correctiveAttachmentPaths.js';
 
 const router = Router();
-const MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024;
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024;   // 20 MB
+const MAX_VIDEO_SIZE = 200 * 1024 * 1024;  // 200 MB
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_ATTACHMENT_SIZE, files: 10 },
+  limits: { fileSize: MAX_VIDEO_SIZE, files: 10 },
   fileFilter: (_req, file, cb) => {
-    const accepted = /^image\/(png|jpe?g)$/i.test(file.mimetype);
+    const isImage = /^image\/(png|jpe?g)$/i.test(file.mimetype);
+    const isVideo = /^video\/mp4$/i.test(file.mimetype);
     cb(
-      accepted
+      isImage || isVideo
         ? null
-        : new Error('Formato inválido. Os prints da corretiva devem ser PNG, JPG ou JPEG.'),
-      accepted
+        : new Error('Formato inválido. Os anexos da corretiva devem ser PNG, JPG, JPEG ou MP4.'),
+      isImage || isVideo
     );
   },
 });
 
 function userStorageKey(req) {
   return req.authSession.user.userId || req.authSession.id;
+}
+
+async function processVideo(file) {
+  return {
+    buffer: file.buffer,
+    extension: '.mp4',
+    contentType: 'video/mp4',
+  };
 }
 
 async function processImage(file) {
@@ -71,9 +81,24 @@ router.post('/', upload.array('files', 10), async (req, res, next) => {
     }
 
     const prefix = correctiveAttachmentPrefix(userStorageKey(req), requestId);
+    const oversized = files.find((file) => {
+      const isVideo = /^video\/mp4$/i.test(file.mimetype);
+      return isVideo ? file.size > MAX_VIDEO_SIZE : file.size > MAX_IMAGE_SIZE;
+    });
+    if (oversized) {
+      const isVideo = /^video\/mp4$/i.test(oversized.mimetype);
+      return res.status(400).json({
+        ok: false,
+        error: isVideo
+          ? 'Vídeo muito grande. O tamanho máximo é 200 MB.'
+          : 'Imagem muito grande. O tamanho máximo é 20 MB.',
+      });
+    }
+
     const attachments = await Promise.all(
       files.map(async (file) => {
-        const processed = await processImage(file);
+        const isVideo = /^video\/mp4$/i.test(file.mimetype);
+        const processed = isVideo ? await processVideo(file) : await processImage(file);
         const id = nanoid(12);
         const filename = `${id}${processed.extension}`;
         const key = `${prefix}${filename}`;
@@ -106,7 +131,7 @@ router.delete('/:requestId/:filename', async (req, res, next) => {
       return res.status(400).json({ ok: false, error: 'Identificador da corretiva inválido.' });
     }
     const filename = path.basename(req.params.filename);
-    if (!/^[a-zA-Z0-9_-]{6,80}\.(png|jpe?g)$/i.test(filename)) {
+    if (!/^[a-zA-Z0-9_-]{6,80}\.(png|jpe?g|mp4)$/i.test(filename)) {
       return res.status(400).json({ ok: false, error: 'Nome do anexo inválido.' });
     }
     const key = `${correctiveAttachmentPrefix(userStorageKey(req), requestId)}${filename}`;

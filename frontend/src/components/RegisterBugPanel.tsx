@@ -6,6 +6,7 @@ import {
   Copy,
   ExternalLink,
   Loader2,
+  Plus,
   RefreshCw,
   Send,
   Sparkles,
@@ -49,7 +50,7 @@ export function RegisterBugModal({
   const [hu, setHu] = useState(context.hu);
   const [screenPath, setScreenPath] = useState(context.screenPath);
   const [screenUrl, setScreenUrl] = useState(context.screenUrl || '');
-  const [errorDescription, setErrorDescription] = useState('');
+  const [errors, setErrors] = useState<string[]>(['']);
   const [card, setCard] = useState<CorrectiveCardDraft | null>(null);
   const [generating, setGenerating] = useState(false);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
@@ -66,7 +67,7 @@ export function RegisterBugModal({
     setHu(context.hu);
     setScreenPath(context.screenPath);
     setScreenUrl(context.screenUrl || '');
-    setErrorDescription(initialErrorDescription);
+    setErrors(initialErrorDescription ? [initialErrorDescription] : ['']);
     setCard(null);
     setPublished(null);
     setAttachments(initialAttachments);
