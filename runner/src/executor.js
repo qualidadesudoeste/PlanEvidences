@@ -887,6 +887,15 @@ async function authenticateBrowser({ browser, job, scenarioId, secrets, outputDi
   }
 
   const credentialTargets = loginCredentialTargets(observation);
+  const initialLoginState = authenticationObservationState(observation);
+  if (!credentialTargets && !initialLoginState.loginFormVisible) {
+    await confirmAuthenticatedSession(
+      job,
+      observation,
+      'Nenhum formulário de login detectado após a navegação. O sistema parece ser de acesso público — autenticação ignorada.'
+    );
+    return;
+  }
   if (credentialTargets) {
     try {
       lastStep = `Preencher ${credentialTargets.username.name}`;
@@ -1426,7 +1435,17 @@ async function runScenario({ browser, job, card, scenario, secrets, outputDir, m
             `A ação "${lastStep}" falhou repetidamente. Detalhe técnico: ${safeToolError}`
           );
         }
-        observation = `A ferramenta falhou: ${safeToolError}\n\n${observation}`;
+        // Ref stale: busca snapshot fresco para o agente ter refs válidos na próxima decisão
+        if (/does not match any elements/i.test(safeToolError)) {
+          try {
+            const freshSnapshot = await currentBrowserObservation(browser, secrets);
+            observation = `A ferramenta falhou: ${safeToolError}\n\nSnapshot atualizado — use apenas referências listadas abaixo:\n${freshSnapshot}`;
+          } catch {
+            observation = `A ferramenta falhou: ${safeToolError}\n\n${observation}`;
+          }
+        } else {
+          observation = `A ferramenta falhou: ${safeToolError}\n\n${observation}`;
+        }
         continue;
       }
       failedActions.delete(actionSignature);

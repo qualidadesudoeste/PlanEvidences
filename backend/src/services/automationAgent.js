@@ -70,7 +70,9 @@ Regras:
   aguarde a conclusão antes de verificar o resultado esperado.
 - Se uma ação falhar ou não alterar a tela, inspecione novamente, tente uma alternativa segura e registre
   o bloqueio apenas depois de esgotar as alternativas compatíveis com o cenário.
-- Não repita indefinidamente a mesma ação.`;
+- Não repita indefinidamente a mesma ação.
+- Quando receber erro "does not match any elements", significa que o ref ficou desatualizado. Nunca reutilize
+  o ref que falhou. Leia o snapshot atualizado fornecido junto ao erro e use exclusivamente refs presentes nele.`;
 
 function configuredProvider() {
   if (process.env.OPENAI_API_KEY) {
